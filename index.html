@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTR Account Scores</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 { color: #333; margin-bottom: 20px; font-size: 28px; }
+
+        /* ── Login box ── */
+        #loginBox {
+            max-width: 380px;
+            margin: 60px auto;
+            background: white;
+            padding: 36px;
+            border-radius: 10px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        #loginBox h2 { color: #333; margin-bottom: 24px; text-align: center; font-size: 22px; }
+        #loginBox label { display: block; color: #555; margin-bottom: 6px; font-size: 14px; font-weight: 500; }
+        #loginBox input {
+            width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+            border-radius: 6px; font-size: 15px; margin-bottom: 18px;
+        }
+        #loginBox input:focus { outline: none; border-color: #007bff; }
+        #loginBtn {
+            width: 100%; padding: 11px; background: #007bff; color: white;
+            border: none; border-radius: 6px; font-size: 15px; font-weight: 600;
+            cursor: pointer;
+        }
+        #loginBtn:hover { background: #0069d9; }
+        #loginErr { color: #c33; font-size: 13px; margin-top: 10px; text-align: center; min-height: 18px; }
+
+        /* ── App ── */
+        #app { display: none; }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .toolbar-left { color: #555; font-size: 14px; }
+        #logoutBtn {
+            padding: 7px 16px; background: #dc3545; color: white;
+            border: none; border-radius: 5px; font-size: 13px; cursor: pointer;
+        }
+        #logoutBtn:hover { background: #c82333; }
+
+        .info {
+            background: #e7f3ff; color: #004085;
+            padding: 10px 15px; border-radius: 4px;
+            margin-bottom: 15px; font-size: 14px;
+        }
+
+        .error {
+            background: #fee; color: #c33;
+            padding: 15px; border-radius: 4px;
+            border-left: 4px solid #c33; margin-bottom: 20px;
+        }
+
+        .loading { color: #888; padding: 20px 0; font-size: 15px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th {
+            background: #f8f9fa; color: #333; font-weight: 600;
+            position: sticky; top: 0;
+        }
+        tr:hover { background: #f8f9fa; }
+
+        .sortable {
+            cursor: pointer; user-select: none;
+            position: relative; padding-right: 25px;
+        }
+        .sortable:hover { background: #e9ecef; }
+        .sortable::after { content: '⇅'; position: absolute; right: 8px; color: #999; font-size: 14px; }
+        .sortable.asc::after  { content: '↑'; color: #007bff; }
+        .sortable.desc::after { content: '↓'; color: #007bff; }
+
+        .date-cell {
+            cursor: pointer; color: #007bff;
+            position: relative; padding-right: 20px;
+        }
+        .date-cell::after { content: '🔄'; position: absolute; right: 0; font-size: 10px; opacity: 0.5; }
+        .date-cell:hover { text-decoration: underline; }
+
+        .last-updated { font-size: 12px; color: #999; margin-top: 12px; text-align: right; }
+
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            h1 { font-size: 22px; }
+            th, td { padding: 8px 6px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── Login ── -->
+<div id="loginBox">
+    <h2>🔒 MTR Account Login</h2>
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="you@example.com" autocomplete="username">
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+    <button id="loginBtn">Sign In</button>
+    <div id="loginErr"></div>
+</div>
+
+<!-- ── App ── -->
+<div id="app">
+    <div class="container">
+        <div class="toolbar">
+            <h1>🚇 MTR Account Scores</h1>
+            <div>
+                <span class="toolbar-left" id="userEmail"></span>
+                <button id="logoutBtn">Sign out</button>
+            </div>
+        </div>
+
+        <div class="info">
+            💡 Click <strong>Score</strong> header to sort. Click dates to toggle relative / actual.
+        </div>
+
+        <div id="content">
+            <p class="loading">⏳ Loading data…</p>
+        </div>
+
+        <div class="last-updated" id="lastUpdated"></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    const SUPABASE_URL = 'https://dsgrqspgumeicsmxmikm.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_q_Dhn81pzvKMicizmxoO4w_J6lqBLPE';
+
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let sortState = 'default';
+    let allRows   = [];
+
+    // ── Auth state ───────────────────────────────────────────────────────
+    sb.auth.onAuthStateChange((event, session) => {
+        if (session) {
+            showApp(session.user.email);
+            loadData();
+        } else {
+            showLogin();
+        }
+    });
+
+    function showLogin() {
+        document.getElementById('loginBox').style.display = '';
+        document.getElementById('app').style.display = 'none';
+    }
+
+    function showApp(email) {
+        document.getElementById('loginBox').style.display = 'none';
+        document.getElementById('app').style.display = '';
+        document.getElementById('userEmail').textContent = email + '  ';
+    }
+
+    // ── Login / Logout ────────────────────────────────────────────────────
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+        const email    = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const errEl    = document.getElementById('loginErr');
+        errEl.textContent = '';
+
+        if (!email || !password) { errEl.textContent = 'Please enter email and password.'; return; }
+
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) errEl.textContent = error.message;
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await sb.auth.signOut();
+    });
+
+    // ── Data ──────────────────────────────────────────────────────────────
+    function getRelativeTime(dateStr) {
+        if (!dateStr) return '—';
+        const today = new Date(); today.setHours(0,0,0,0);
+        const d = new Date(dateStr); d.setHours(0,0,0,0);
+        const diff = Math.round((today - d) / 86400000);
+        if (diff === 0)  return 'today';
+        if (diff === 1)  return 'one day ago';
+        if (diff > 1)   return diff + ' days ago';
+        if (diff === -1) return 'tomorrow';
+        return Math.abs(diff) + ' days later';
+    }
+
+    function esc(str) {
+        if (str == null) return '';
+        return String(str).replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"');
+    }
+
+    function getSortedRows() {
+        const rows = [...allRows];
+        if (sortState === 'asc')  rows.sort((a,b) => (a.score??0) - (b.score??0));
+        if (sortState === 'desc') rows.sort((a,b) => (b.score??0) - (a.score??0));
+        return rows;
+    }
+
+    function renderTable() {
+        const rows = getSortedRows();
+        const sortClass = sortState === 'default' ? '' : sortState;
+
+        if (rows.length === 0) {
+            document.getElementById('content').innerHTML = '<p style="color:#666;padding:20px 0;">No records found.</p>';
+            return;
+        }
+
+        let html = `<table><thead><tr>
+            <th>MTR Account ID</th>
+            <th>Name</th>
+            <th class="sortable ${sortClass}" id="scoreHeader">Score</th>
+            <th>Score Date</th>
+        </tr></thead><tbody>`;
+
+        rows.forEach(row => {
+            const rel    = getRelativeTime(row.scoredate);
+            const actual = esc(row.scoredate ?? '');
+            html += `<tr>
+                <td>${esc(row.mtraccountid)}</td>
+                <td>${esc(row.name)}</td>
+                <td>${esc(row.score)}</td>
+                <td class="date-cell" data-relative="${esc(rel)}" data-actual="${actual}" onclick="toggleDate(this)">${esc(rel)}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table>';
+        document.getElementById('content').innerHTML = html;
+        document.getElementById('scoreHeader').addEventListener('click', () => {
+            sortState = sortState === 'default' ? 'asc' : sortState === 'asc' ? 'desc' : 'default';
+            renderTable();
+        });
+    }
+
+    function toggleDate(el) {
+        const cur = el.textContent.trim();
+        el.textContent = cur === el.getAttribute('data-relative') ? el.getAttribute('data-actual') : el.getAttribute('data-relative');
+    }
+
+    async function loadData() {
+        document.getElementById('content').innerHTML = '<p class="loading">⏳ Loading data…</p>';
+        try {
+            const { data, error } = await sb
+                .from('mtraccount')
+                .select('mtraccountid, name, score, scoredate')
+                .order('mtraccountid', { ascending: true });
+
+            if (error) throw error;
+            allRows = data || [];
+            renderTable();
+            document.getElementById('lastUpdated').textContent = 'Last fetched: ' + new Date().toLocaleString();
+        } catch (err) {
+            document.getElementById('content').innerHTML =
+                `<div class="error"><strong>Error:</strong> ${esc(err.message)}</div>`;
+        }
+    }
+</script>
+</body>
+</html>
