@@ -168,14 +168,15 @@
     });
 
     function showLogin() {
-        document.getElementById('loginBox').style.display = '';
+        document.getElementById('loginBox').style.display = 'flex';
+        document.getElementById('loginBox').style.flexDirection = 'column';
         document.getElementById('app').style.display = 'none';
     }
 
     function showApp(email) {
         document.getElementById('loginBox').style.display = 'none';
-        document.getElementById('app').style.display = '';
-        document.getElementById('userEmail').textContent = email + '  ';
+        document.getElementById('app').style.display = 'block';
+        document.getElementById('userEmail').textContent = email + '\u00a0\u00a0';
     }
 
     // ── Login / Logout ────────────────────────────────────────────────────
@@ -210,7 +211,12 @@
 
     function esc(str) {
         if (str == null) return '';
-        return String(str).replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"');
+        // Use \x26 (hex for &) so file-writers don't decode HTML entities
+        return String(str)
+            .replace(/&/g, '\x26amp;')
+            .replace(/</g, '\x26lt;')
+            .replace(/>/g, '\x26gt;')
+            .replace(/"/g, '\x26quot;');
     }
 
     function getSortedRows() {
