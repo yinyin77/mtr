@@ -209,16 +209,6 @@
         return Math.abs(diff) + ' days later';
     }
 
-    function esc(str) {
-        if (str == null) return '';
-        // Use \x26 (hex for &) so file-writers don't decode HTML entities
-        return String(str)
-            .replace(/&/g, '\x26amp;')
-            .replace(/</g, '\x26lt;')
-            .replace(/>/g, '\x26gt;')
-            .replace(/"/g, '\x26quot;');
-    }
-
     function getSortedRows() {
         const rows = [...allRows];
         if (sortState === 'asc')  rows.sort((a,b) => (a.score??0) - (b.score??0));
@@ -228,37 +218,59 @@
 
     function renderTable() {
         const rows = getSortedRows();
-        const sortClass = sortState === 'default' ? '' : sortState;
+        const content = document.getElementById('content');
+        content.innerHTML = '';
 
         if (rows.length === 0) {
-            document.getElementById('content').innerHTML = '<p style="color:#666;padding:20px 0;">No records found.</p>';
+            const p = document.createElement('p');
+            p.style.cssText = 'color:#666;padding:20px 0';
+            p.textContent = 'No records found.';
+            content.appendChild(p);
             return;
         }
 
-        let html = `<table><thead><tr>
-            <th>MTR Account ID</th>
-            <th>Name</th>
-            <th class="sortable ${sortClass}" id="scoreHeader">Score</th>
-            <th>Score Date</th>
-        </tr></thead><tbody>`;
+        // Build table using DOM (avoids any HTML-encoding pitfalls)
+        const table = document.createElement('table');
 
+        // Header
+        const thead = table.createTHead();
+        const hrow  = thead.insertRow();
+        const cols  = ['MTR Account ID', 'Name', 'Score', 'Score Date'];
+        cols.forEach((label, i) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            if (i === 2) {  // Score column
+                th.className = 'sortable' + (sortState !== 'default' ? ' ' + sortState : '');
+                th.id = 'scoreHeader';
+                th.addEventListener('click', () => {
+                    sortState = sortState === 'default' ? 'asc' : sortState === 'asc' ? 'desc' : 'default';
+                    renderTable();
+                });
+            }
+            hrow.appendChild(th);
+        });
+
+        // Body
+        const tbody = table.createTBody();
         rows.forEach(row => {
             const rel    = getRelativeTime(row.scoredate);
-            const actual = esc(row.scoredate ?? '');
-            html += `<tr>
-                <td>${esc(row.mtraccountid)}</td>
-                <td>${esc(row.name)}</td>
-                <td>${esc(row.score)}</td>
-                <td class="date-cell" data-relative="${esc(rel)}" data-actual="${actual}" onclick="toggleDate(this)">${esc(rel)}</td>
-            </tr>`;
+            const actual = String(row.scoredate ?? '');
+            const tr     = tbody.insertRow();
+
+            [row.mtraccountid, row.name, row.score].forEach(val => {
+                const td = tr.insertCell();
+                td.textContent = val ?? '';
+            });
+
+            const dateTd = tr.insertCell();
+            dateTd.className  = 'date-cell';
+            dateTd.textContent = rel;
+            dateTd.dataset.relative = rel;
+            dateTd.dataset.actual   = actual;
+            dateTd.addEventListener('click', () => toggleDate(dateTd));
         });
 
-        html += '</tbody></table>';
-        document.getElementById('content').innerHTML = html;
-        document.getElementById('scoreHeader').addEventListener('click', () => {
-            sortState = sortState === 'default' ? 'asc' : sortState === 'asc' ? 'desc' : 'default';
-            renderTable();
-        });
+        content.appendChild(table);
     }
 
     function toggleDate(el) {
