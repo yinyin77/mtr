@@ -135,8 +135,9 @@
             </div>
         </div>
 
-        <div class="info">
-            💡 Click <strong>Score</strong> header to sort. Click dates to toggle relative / actual.
+        <div class="info" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <span>💡 Click <strong>Score</strong> or <strong>Score Date</strong> header to sort. Click a date cell to toggle that cell.</span>
+            <button id="toggleDatesBtn" style="white-space:nowrap;padding:5px 14px;font-size:13px;cursor:pointer;border:1px solid #007bff;border-radius:4px;background:white;color:#007bff;font-weight:600;">📅 Show Raw Dates</button>
         </div>
 
         <div id="content">
@@ -154,8 +155,10 @@
 
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let sortState = 'default';
-    let allRows   = [];
+    let sortState     = 'default';   // Score column sort
+    let dateSortState = 'default';   // Score Date column sort
+    let showRawDates  = false;       // global date format toggle
+    let allRows       = [];
 
     // ── Auth state ───────────────────────────────────────────────────────
     sb.auth.onAuthStateChange((event, session) => {
@@ -196,6 +199,13 @@
         await sb.auth.signOut();
     });
 
+    document.getElementById('toggleDatesBtn').addEventListener('click', () => {
+        showRawDates = !showRawDates;
+        document.getElementById('toggleDatesBtn').textContent =
+            showRawDates ? '📅 Show Relative Dates' : '📅 Show Raw Dates';
+        renderTable();
+    });
+
     // ── Data ──────────────────────────────────────────────────────────────
     function getRelativeTime(dateStr) {
         if (!dateStr) return '—';
@@ -211,8 +221,10 @@
 
     function getSortedRows() {
         const rows = [...allRows];
-        if (sortState === 'asc')  rows.sort((a,b) => (a.score??0) - (b.score??0));
-        if (sortState === 'desc') rows.sort((a,b) => (b.score??0) - (a.score??0));
+        if (sortState === 'asc')      rows.sort((a,b) => (a.score??0) - (b.score??0));
+        if (sortState === 'desc')     rows.sort((a,b) => (b.score??0) - (a.score??0));
+        if (dateSortState === 'asc')  rows.sort((a,b) => new Date(a.scoredate||0) - new Date(b.scoredate||0));
+        if (dateSortState === 'desc') rows.sort((a,b) => new Date(b.scoredate||0) - new Date(a.scoredate||0));
         return rows;
     }
 
@@ -241,9 +253,17 @@
             th.textContent = label;
             if (i === 2) {  // Score column
                 th.className = 'sortable' + (sortState !== 'default' ? ' ' + sortState : '');
-                th.id = 'scoreHeader';
                 th.addEventListener('click', () => {
-                    sortState = sortState === 'default' ? 'asc' : sortState === 'asc' ? 'desc' : 'default';
+                    sortState     = sortState === 'default' ? 'asc' : sortState === 'asc' ? 'desc' : 'default';
+                    dateSortState = 'default';
+                    renderTable();
+                });
+            }
+            if (i === 3) {  // Score Date column
+                th.className = 'sortable' + (dateSortState !== 'default' ? ' ' + dateSortState : '');
+                th.addEventListener('click', () => {
+                    dateSortState = dateSortState === 'default' ? 'asc' : dateSortState === 'asc' ? 'desc' : 'default';
+                    sortState     = 'default';
                     renderTable();
                 });
             }
@@ -263,11 +283,14 @@
             });
 
             const dateTd = tr.insertCell();
-            dateTd.className  = 'date-cell';
-            dateTd.textContent = rel;
+            dateTd.className        = 'date-cell';
+            dateTd.textContent      = showRawDates ? actual : rel;
             dateTd.dataset.relative = rel;
             dateTd.dataset.actual   = actual;
-            dateTd.addEventListener('click', () => toggleDate(dateTd));
+            dateTd.addEventListener('click', () => {
+                const isRaw = dateTd.textContent.trim() === dateTd.dataset.actual;
+                dateTd.textContent = isRaw ? dateTd.dataset.relative : dateTd.dataset.actual;
+            });
         });
 
         content.appendChild(table);
