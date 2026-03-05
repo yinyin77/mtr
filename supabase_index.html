@@ -220,7 +220,7 @@
         const SUPABASE_KEY  = 'sb_publishable_q_Dhn81pzvKMicizmxoO4w_J6lqBLPE';
         // ────────────────────────────────────────────────────────────────
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // Sort state: 'default' | 'asc' | 'desc'
         let sortState = 'default';
@@ -394,7 +394,7 @@
         async function loadData() {
             try {
                 // Query all records from mtraccount_dbaudit
-                const { data, error } = await supabase
+                const { data, error } = await sb
                     .from('mtraccount_dbaudit')
                     .select('name, score, audittime')
                     .order('audittime', { ascending: false });
