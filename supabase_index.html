@@ -462,14 +462,19 @@
                 pathD += ` L ${points[i].x} ${points[i].y}`;
             }
             
+            // Check if any point has change >= 2300
+            const hasHot = points.some(p => p.change >= THRESHOLD);
+            const lineClass = hasHot ? 'sparkline-line hot' : 'sparkline-line';
+            
             // Build dots with tooltips showing cumulative change
             const dots = points.map(p => {
                 const changeStr = p.change >= 0 ? `+${p.change}` : p.change;
-                return `<circle cx="${p.x}" cy="${p.y}" r="2" class="sparkline-dot" title="${p.date}: ${changeStr}"/>`;
+                const dotClass = p.change >= THRESHOLD ? 'sparkline-dot hot' : 'sparkline-dot';
+                return `<circle cx="${p.x}" cy="${p.y}" r="2" class="${dotClass}" title="${p.date}: ${changeStr}"/>`;
             }).join('');
             
             return `<svg>
-                <path d="${pathD}" class="sparkline-line"/>
+                <path d="${pathD}" class="${lineClass}"/>
                 ${dots}
             </svg>`;
         }
