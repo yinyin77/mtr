@@ -136,45 +136,34 @@
             text-align: right;
         }
 
-        /* Sparkline styles */
+        /* Line chart sparkline styles */
         .sparkline {
-            display: flex;
-            align-items: flex-end;
-            gap: 2px;
             height: 20px;
             width: 70px;
-        }
-
-        .sparkline-bar {
-            flex: 1;
-            background: #4caf50;
-            min-width: 4px;
-            border-radius: 1px 1px 0 0;
             position: relative;
         }
 
-        .sparkline-bar:hover {
-            background: #388e3c;
+        .sparkline svg {
+            width: 100%;
+            height: 100%;
         }
 
-        .sparkline-bar:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #333;
-            color: white;
-            padding: 4px 6px;
-            border-radius: 3px;
-            font-size: 10px;
-            white-space: nowrap;
-            z-index: 10;
-            margin-bottom: 2px;
+        .sparkline-line {
+            fill: none;
+            stroke: #4caf50;
+            stroke-width: 2;
         }
 
-        .sparkline-bar.zero {
-            background: #e0e0e0;
+        .sparkline-line.hot {
+            stroke: #ff5722;
+        }
+
+        .sparkline-dot {
+            fill: #4caf50;
+        }
+
+        .sparkline-dot.hot {
+            fill: #ff5722;
         }
 
         /* Login box styles */
@@ -258,7 +247,7 @@
             </div>
 
             <div class="info">
-                💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Sparkline shows last 7 days entry counts.
+                💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Line chart shows score trend (orange when >= 2300).
             </div>
 
             <div id="content">
@@ -370,7 +359,7 @@
                         name: name,
                         score: null,
                         audittime: null,
-                        dailyCounts: {}
+                        dailyScores: {}
                     });
                 }
 
@@ -383,19 +372,28 @@
                     account.score = row.score;
                 }
 
-                // Count daily entries
-                if (auditDate) {
-                    account.dailyCounts[auditDate] = (account.dailyCounts[auditDate] || 0) + 1;
+                // Track daily score (latest score for each day)
+                if (auditDate && row.score != null) {
+                    // Keep the latest score for each day
+                    if (!account.dailyScores[auditDate] || row.audittime > account.dailyScores[auditDate].audittime) {
+                        account.dailyScores[auditDate] = {
+                            score: row.score,
+                            audittime: row.audittime
+                        };
+                    }
                 }
             });
 
             // Convert to array and add sparkline data
             return Array.from(accountMap.values()).map(account => {
                 // Build sparkline data for last 7 days
-                const sparkData = last7Days.map(date => ({
-                    date: date,
-                    count: account.dailyCounts[date] || 0
-                }));
+                const sparkData = last7Days.map(date => {
+                    const dayData = account.dailyScores[date];
+                    return {
+                        date: date,
+                        score: dayData ? dayData.score : null
+                    };
+                });
 
                 return {
                     ...account,
@@ -404,16 +402,66 @@
             });
         }
 
-        // Generate sparkline HTML
+        // Generate line chart sparkline HTML
         function generateSparkline(sparkData) {
-            const maxCount = Math.max(...sparkData.map(d => d.count), 1);
+            const THRESHOLD = 2300;
+            const width = 70;
+            const height = 20;
+            const padding = 2;
             
-            return sparkData.map(d => {
-                const height = d.count > 0 ? Math.max((d.count / maxCount) * 100, 20) : 0;
-                const barClass = d.count === 0 ? 'sparkline-bar zero' : 'sparkline-bar';
-                const tooltip = `${d.date}: ${d.count} entries`;
-                return `<div class="${barClass}" style="height: ${height}%;" data-tooltip="${escHtml(tooltip)}"></div>`;
+            // Get valid scores
+            const scores = sparkData.map(d => d.score).filter(s => s != null);
+            if (scores.length === 0) {
+                return '<svg><text x="35" y="12" text-anchor="middle" fill="#999" font-size="8">No data</text></svg>';
+            }
+            
+            const minScore = Math.min(...scores);
+            const maxScore = Math.max(...scores);
+            const range = maxScore - minScore || 1;
+            
+            // Calculate points
+            const points = sparkData.map((d, i) => {
+                const x = padding + (i / (sparkData.length - 1)) * (width - 2 * padding);
+                let y;
+                if (d.score == null) {
+                    y = null;
+                } else {
+                    y = height - padding - ((d.score - minScore) / range) * (height - 2 * padding);
+                }
+                return { x, y, score: d.score, date: d.date };
+            }).filter(p => p.y !== null);
+            
+            if (points.length < 2) {
+                // Single point or no points
+                if (points.length === 1) {
+                    const p = points[0];
+                    const isHot = p.score >= THRESHOLD;
+                    return `<svg title="${p.date}: ${p.score}">
+                        <circle cx="${p.x}" cy="${p.y}" r="3" class="sparkline-dot ${isHot ? 'hot' : ''}"/>
+                    </svg>`;
+                }
+                return '<svg><text x="35" y="12" text-anchor="middle" fill="#999" font-size="8">No data</text></svg>';
+            }
+            
+            // Build line path
+            let pathD = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 1; i < points.length; i++) {
+                pathD += ` L ${points[i].x} ${points[i].y}`;
+            }
+            
+            // Check if any point is hot (>= 2300)
+            const hasHot = points.some(p => p.score >= THRESHOLD);
+            
+            // Build dots
+            const dots = points.map(p => {
+                const isHot = p.score >= THRESHOLD;
+                return `<circle cx="${p.x}" cy="${p.y}" r="2" class="sparkline-dot ${isHot ? 'hot' : ''}" title="${p.date}: ${p.score}"/>`;
             }).join('');
+            
+            return `<svg>
+                <path d="${pathD}" class="sparkline-line ${hasHot ? 'hot' : ''}"/>
+                ${dots}
+            </svg>`;
         }
 
         function getSortedRows() {
