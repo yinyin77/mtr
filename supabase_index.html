@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTR Account Scores</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+
+        .info {
+            background: #e7f3ff;
+            color: #004085;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #c33;
+            margin-bottom: 20px;
+        }
+
+        .loading {
+            color: #888;
+            padding: 20px 0;
+            font-size: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #f8f9fa;
+            color: #333;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 25px;
+        }
+
+        .sortable:hover {
+            background: #e9ecef;
+        }
+
+        .sortable::after {
+            content: '⇅';
+            position: absolute;
+            right: 8px;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .sortable.asc::after {
+            content: '↑';
+            color: #007bff;
+        }
+
+        .sortable.desc::after {
+            content: '↓';
+            color: #007bff;
+        }
+
+        .date-cell {
+            cursor: pointer;
+            color: #007bff;
+            position: relative;
+            padding-right: 20px;
+            white-space: nowrap;
+        }
+
+        .date-cell::after {
+            content: '🔄';
+            position: absolute;
+            right: 0;
+            font-size: 10px;
+            opacity: 0.5;
+        }
+
+        .date-cell:hover {
+            text-decoration: underline;
+        }
+
+        .last-updated {
+            font-size: 12px;
+            color: #999;
+            margin-top: 12px;
+            text-align: right;
+        }
+
+        /* Sparkline styles */
+        .sparkline {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 20px;
+            width: 70px;
+        }
+
+        .sparkline-bar {
+            flex: 1;
+            background: #4caf50;
+            min-width: 4px;
+            border-radius: 1px 1px 0 0;
+            position: relative;
+        }
+
+        .sparkline-bar:hover {
+            background: #388e3c;
+        }
+
+        .sparkline-bar:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 4px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            white-space: nowrap;
+            z-index: 10;
+            margin-bottom: 2px;
+        }
+
+        .sparkline-bar.zero {
+            background: #e0e0e0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            h1 {
+                font-size: 22px;
+            }
+
+            th, td {
+                padding: 8px 6px;
+                font-size: 14px;
+            }
+
+            .sparkline {
+                width: 50px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚇 MTR Account Scores (DBAudit)</h1>
+
+        <div class="info">
+            💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Sparkline shows last 7 days entry counts.
+        </div>
+
+        <div id="content">
+            <p class="loading">⏳ Loading data from Supabase...</p>
+        </div>
+
+        <div class="last-updated" id="lastUpdated"></div>
+    </div>
+
+    <!-- Supabase JS client (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // ── Supabase config ──────────────────────────────────────────────
+        const SUPABASE_URL  = 'https://dsgrqspgumeicsmxmikm.supabase.co';
+        const SUPABASE_KEY  = 'sb_publishable_q_Dhn81pzvKMicizmxoO4w_J6lqBLPE';
+        // ────────────────────────────────────────────────────────────────
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // Sort state: 'default' | 'asc' | 'desc'
+        let sortState = 'default';
+        let allRows   = [];
+
+        // Calculate relative date label
+        function getRelativeTime(dateStr) {
+            if (!dateStr) return '—';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const score = new Date(dateStr);
+            score.setHours(0, 0, 0, 0);
+            const diff = Math.round((today - score) / 86400000);
+            if (diff === 0) return 'today';
+            if (diff === 1) return '1 day ago';
+            if (diff > 1)  return diff + ' days ago';
+            if (diff === -1) return 'tomorrow';
+            return Math.abs(diff) + ' days later';
+        }
+
+        function escHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&')
+                .replace(/</g, '<')
+                .replace(/>/g, '>')
+                .replace(/"/g, '"');
+        }
+
+        // Generate last 7 days date strings (YYYY-MM-DD)
+        function getLast7Days() {
+            const days = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                days.push(d.toISOString().split('T')[0]);
+            }
+            return days;
+        }
+
+        // Process raw data into grouped account data
+        function processData(data) {
+            const accountMap = new Map();
+            const last7Days = getLast7Days();
+
+            data.forEach(row => {
+                const name = row.name;
+                if (!name) return;
+
+                if (!accountMap.has(name)) {
+                    accountMap.set(name, {
+                        name: name,
+                        score: null,
+                        audittime: null,
+                        dailyCounts: {}
+                    });
+                }
+
+                const account = accountMap.get(name);
+                const auditDate = row.audittime ? row.audittime.split('T')[0] : null;
+
+                // Update latest score and time
+                if (!account.audittime || (row.audittime && row.audittime > account.audittime)) {
+                    account.audittime = row.audittime;
+                    account.score = row.score;
+                }
+
+                // Count daily entries
+                if (auditDate) {
+                    account.dailyCounts[auditDate] = (account.dailyCounts[auditDate] || 0) + 1;
+                }
+            });
+
+            // Convert to array and add sparkline data
+            return Array.from(accountMap.values()).map(account => {
+                // Build sparkline data for last 7 days
+                const sparkData = last7Days.map(date => ({
+                    date: date,
+                    count: account.dailyCounts[date] || 0
+                }));
+
+                return {
+                    ...account,
+                    sparkData: sparkData
+                };
+            });
+        }
+
+        // Generate sparkline HTML
+        function generateSparkline(sparkData) {
+            const maxCount = Math.max(...sparkData.map(d => d.count), 1);
+            
+            return sparkData.map(d => {
+                const height = d.count > 0 ? Math.max((d.count / maxCount) * 100, 20) : 0;
+                const barClass = d.count === 0 ? 'sparkline-bar zero' : 'sparkline-bar';
+                const tooltip = `${d.date}: ${d.count} entries`;
+                return `<div class="${barClass}" style="height: ${height}%;" data-tooltip="${escHtml(tooltip)}"></div>`;
+            }).join('');
+        }
+
+        function getSortedRows() {
+            const rows = [...allRows];
+            if (sortState === 'asc')  rows.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
+            if (sortState === 'desc') rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+            // 'default' → alphabetical by name
+            if (sortState === 'default') rows.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+            return rows;
+        }
+
+        function getNextSort() {
+            if (sortState === 'default') return 'asc';
+            if (sortState === 'asc')     return 'desc';
+            return 'default';
+        }
+
+        function renderTable() {
+            const rows = getSortedRows();
+            const sortClass = sortState === 'default' ? '' : sortState;
+
+            if (rows.length === 0) {
+                document.getElementById('content').innerHTML =
+                    '<p style="color:#666;padding:20px 0;">No records found.</p>';
+                return;
+            }
+
+            let html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th class="sortable ${sortClass}" id="scoreHeader">Score</th>
+                        <th>Latest Date</th>
+                        <th>Last 7 Days</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            rows.forEach(row => {
+                const rel    = getRelativeTime(row.audittime);
+                const actual = escHtml(row.audittime ? row.audittime.split('T')[0] : '');
+                const sparkline = generateSparkline(row.sparkData);
+                
+                html += `
+                    <tr>
+                        <td>${escHtml(row.name)}</td>
+                        <td>${escHtml(row.score ?? '—')}</td>
+                        <td class="date-cell"
+                            data-relative="${escHtml(rel)}"
+                            data-actual="${actual}"
+                            onclick="toggleDate(this)">${escHtml(rel)}</td>
+                        <td><div class="sparkline">${sparkline}</div></td>
+                    </tr>`;
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('content').innerHTML = html;
+
+            document.getElementById('scoreHeader').addEventListener('click', () => {
+                sortState = getNextSort();
+                renderTable();
+            });
+        }
+
+        function toggleDate(el) {
+            const cur      = el.textContent.trim();
+            const relative = el.getAttribute('data-relative');
+            const actual   = el.getAttribute('data-actual');
+            el.textContent = (cur === relative) ? actual : relative;
+        }
+
+        async function loadData() {
+            try {
+                // Query all records from mtraccount_dbaudit
+                const { data, error } = await supabase
+                    .from('mtraccount_dbaudit')
+                    .select('name, score, audittime')
+                    .order('audittime', { ascending: false });
+
+                if (error) throw error;
+
+                // Process data to group by name
+                allRows = processData(data || []);
+                renderTable();
+
+                const now = new Date();
+                document.getElementById('lastUpdated').textContent =
+                    'Last fetched: ' + now.toLocaleString() + ' | Total accounts: ' + allRows.length;
+
+            } catch (err) {
+                document.getElementById('content').innerHTML =
+                    `<div class="error"><strong>Error:</strong> ${escHtml(err.message)}<br>
+                     <small>Make sure the Supabase table has a public read policy enabled.</small></div>`;
+            }
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
