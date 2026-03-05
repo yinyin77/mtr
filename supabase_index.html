@@ -177,6 +177,43 @@
             background: #e0e0e0;
         }
 
+        /* Login box styles */
+        #loginBox {
+            max-width: 380px;
+            margin: 60px auto;
+            background: white;
+            padding: 36px;
+            border-radius: 10px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        }
+        #loginBox h2 { color: #333; margin-bottom: 24px; text-align: center; font-size: 22px; }
+        #loginBox label { display: block; color: #555; margin-bottom: 6px; font-size: 14px; font-weight: 500; }
+        #loginBox input {
+            width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+            border-radius: 6px; font-size: 15px; margin-bottom: 18px;
+        }
+        #loginBox input:focus { outline: none; border-color: #007bff; }
+        #loginBtn {
+            width: 100%; padding: 11px; background: #007bff; color: white;
+            border: none; border-radius: 6px; font-size: 15px; font-weight: 600;
+            cursor: pointer;
+        }
+        #loginBtn:hover { background: #0069d9; }
+        #loginErr { color: #c33; font-size: 13px; margin-top: 10px; text-align: center; min-height: 18px; }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .toolbar-left { color: #555; font-size: 14px; }
+        #logoutBtn {
+            padding: 7px 16px; background: #dc3545; color: white;
+            border: none; border-radius: 5px; font-size: 13px; cursor: pointer;
+        }
+        #logoutBtn:hover { background: #c82333; }
+
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -198,18 +235,38 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🚇 MTR Account Scores (DBAudit)</h1>
+    <!-- Login Box -->
+    <div id="loginBox">
+        <h2>🔒 MTR Account Login</h2>
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="username">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        <button id="loginBtn">Sign In</button>
+        <div id="loginErr"></div>
+    </div>
 
-        <div class="info">
-            💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Sparkline shows last 7 days entry counts.
+    <!-- App (hidden until logged in) -->
+    <div id="app" style="display:none;">
+        <div class="container">
+            <div class="toolbar">
+                <h1>🚇 MTR Account Scores (DBAudit)</h1>
+                <div>
+                    <span class="toolbar-left" id="userEmail"></span>
+                    <button id="logoutBtn">Sign out</button>
+                </div>
+            </div>
+
+            <div class="info">
+                💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Sparkline shows last 7 days entry counts.
+            </div>
+
+            <div id="content">
+                <p class="loading">⏳ Loading data from Supabase...</p>
+            </div>
+
+            <div class="last-updated" id="lastUpdated"></div>
         </div>
-
-        <div id="content">
-            <p class="loading">⏳ Loading data from Supabase...</p>
-        </div>
-
-        <div class="last-updated" id="lastUpdated"></div>
     </div>
 
     <!-- Supabase JS client (CDN) -->
@@ -225,6 +282,44 @@
         // Sort state: 'default' | 'asc' | 'desc'
         let sortState = 'default';
         let allRows   = [];
+
+        // ── Auth state ─────────────────────────────────────────────────────
+        sb.auth.onAuthStateChange((event, session) => {
+            if (session) {
+                showApp(session.user.email);
+                loadData();
+            } else {
+                showLogin();
+            }
+        });
+
+        function showLogin() {
+            document.getElementById('loginBox').style.display = 'block';
+            document.getElementById('app').style.display = 'none';
+        }
+
+        function showApp(email) {
+            document.getElementById('loginBox').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            document.getElementById('userEmail').textContent = email + '\u00a0\u00a0';
+        }
+
+        // ── Login / Logout ─────────────────────────────────────────────────
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const email    = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const errEl    = document.getElementById('loginErr');
+            errEl.textContent = '';
+
+            if (!email || !password) { errEl.textContent = 'Please enter email and password.'; return; }
+
+            const { error } = await sb.auth.signInWithPassword({ email, password });
+            if (error) errEl.textContent = error.message;
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await sb.auth.signOut();
+        });
 
         // Calculate relative date label
         function getRelativeTime(dateStr) {
@@ -415,8 +510,6 @@
                      <small>Make sure the Supabase table has a public read policy enabled.</small></div>`;
             }
         }
-
-        loadData();
     </script>
 </body>
 </html>
