@@ -402,42 +402,55 @@
             });
         }
 
-        // Generate line chart sparkline HTML
+        // Generate line chart sparkline HTML - cumulative score changes
         function generateSparkline(sparkData) {
             const THRESHOLD = 2300;
             const width = 70;
             const height = 20;
             const padding = 2;
             
-            // Get valid scores
-            const scores = sparkData.map(d => d.score).filter(s => s != null);
-            if (scores.length === 0) {
+            // Get valid scores and find first score
+            const validData = sparkData.filter(d => d.score != null);
+            if (validData.length === 0) {
                 return '<svg><text x="35" y="12" text-anchor="middle" fill="#999" font-size="8">No data</text></svg>';
             }
             
-            const minScore = Math.min(...scores);
-            const maxScore = Math.max(...scores);
-            const range = maxScore - minScore || 1;
+            // Get the first score as baseline
+            const firstScore = validData[0].score;
+            
+            // Calculate cumulative changes from first score
+            const changes = sparkData.map(d => {
+                if (d.score == null) return null;
+                return {
+                    date: d.date,
+                    change: d.score - firstScore
+                };
+            });
+            
+            const changeValues = changes.filter(c => c != null).map(c => c.change);
+            const minChange = Math.min(...changeValues);
+            const maxChange = Math.max(...changeValues);
+            const range = maxChange - minChange || 1;
             
             // Calculate points
-            const points = sparkData.map((d, i) => {
-                const x = padding + (i / (sparkData.length - 1)) * (width - 2 * padding);
+            const points = changes.map((d, i) => {
+                const x = padding + (i / (changes.length - 1)) * (width - 2 * padding);
                 let y;
-                if (d.score == null) {
+                if (d == null || d.change == null) {
                     y = null;
                 } else {
-                    y = height - padding - ((d.score - minScore) / range) * (height - 2 * padding);
+                    y = height - padding - ((d.change - minChange) / range) * (height - 2 * padding);
                 }
-                return { x, y, score: d.score, date: d.date };
+                return { x, y, change: d ? d.change : null, date: d ? d.date : null };
             }).filter(p => p.y !== null);
             
             if (points.length < 2) {
                 // Single point or no points
                 if (points.length === 1) {
                     const p = points[0];
-                    const isHot = p.score >= THRESHOLD;
-                    return `<svg title="${p.date}: ${p.score}">
-                        <circle cx="${p.x}" cy="${p.y}" r="3" class="sparkline-dot ${isHot ? 'hot' : ''}"/>
+                    const changeStr = p.change >= 0 ? `+${p.change}` : p.change;
+                    return `<svg title="${p.date}: ${changeStr}">
+                        <circle cx="${p.x}" cy="${p.y}" r="3" class="sparkline-dot"/>
                     </svg>`;
                 }
                 return '<svg><text x="35" y="12" text-anchor="middle" fill="#999" font-size="8">No data</text></svg>';
@@ -449,17 +462,14 @@
                 pathD += ` L ${points[i].x} ${points[i].y}`;
             }
             
-            // Check if any point is hot (>= 2300)
-            const hasHot = points.some(p => p.score >= THRESHOLD);
-            
-            // Build dots
+            // Build dots with tooltips showing cumulative change
             const dots = points.map(p => {
-                const isHot = p.score >= THRESHOLD;
-                return `<circle cx="${p.x}" cy="${p.y}" r="2" class="sparkline-dot ${isHot ? 'hot' : ''}" title="${p.date}: ${p.score}"/>`;
+                const changeStr = p.change >= 0 ? `+${p.change}` : p.change;
+                return `<circle cx="${p.x}" cy="${p.y}" r="2" class="sparkline-dot" title="${p.date}: ${changeStr}"/>`;
             }).join('');
             
             return `<svg>
-                <path d="${pathD}" class="sparkline-line ${hasHot ? 'hot' : ''}"/>
+                <path d="${pathD}" class="sparkline-line"/>
                 ${dots}
             </svg>`;
         }
