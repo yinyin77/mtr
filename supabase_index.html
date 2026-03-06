@@ -247,7 +247,7 @@
             </div>
 
             <div class="info">
-                💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Line chart shows score trend (orange when >= 2300).
+                💡 Click on <strong>Score</strong> column header to sort. Click on dates to toggle between relative and actual time. Line chart shows score trend (orange when >= 2300). Click on account name to see full history.
             </div>
 
             <div id="content">
@@ -255,6 +255,21 @@
             </div>
 
             <div class="last-updated" id="lastUpdated"></div>
+        </div>
+
+        <!-- Detail View (hidden by default) -->
+        <div id="detailView" class="container" style="display:none;">
+            <div class="toolbar">
+                <button id="backBtn" style="padding:8px 16px;cursor:pointer;border:1px solid #007bff;border-radius:4px;background:white;color:#007bff;font-weight:600;">← Back</button>
+                <h1 id="detailTitle">Account Details</h1>
+                <div></div>
+            </div>
+
+            <div id="detailChart" class="sparkline" style="width:100%;height:150px;margin:20px 0;"></div>
+
+            <div id="detailContent">
+                <p class="loading">⏳ Loading history...</p>
+            </div>
         </div>
     </div>
 
@@ -309,6 +324,138 @@
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             await sb.auth.signOut();
         });
+
+        // Back button handler
+        document.getElementById('backBtn').addEventListener('click', () => {
+            document.getElementById('detailView').style.display = 'none';
+            document.querySelector('.container').style.display = 'block';
+        });
+
+        // Show detail view for an account
+        async function showDetail(name) {
+            document.querySelector('.container').style.display = 'none';
+            document.getElementById('detailView').style.display = 'block';
+            document.getElementById('detailTitle').textContent = 'Account: ' + name;
+            document.getElementById('detailContent').innerHTML = '<p class="loading">⏳ Loading history...</p>';
+            document.getElementById('detailChart').innerHTML = '';
+
+            try {
+                // Query all records for this account
+                const { data, error } = await sb
+                    .from('mtraccount_dbaudit')
+                    .select('mtraccountid, name, score, audittime')
+                    .eq('name', name)
+                    .order('audittime', { ascending: true });
+
+                if (error) throw error;
+
+                const records = data || [];
+                if (records.length === 0) {
+                    document.getElementById('detailContent').innerHTML = '<p style="color:#666;">No records found.</p>';
+                    return;
+                }
+
+                // Generate line chart for all history
+                const sparkData = records.map(r => ({
+                    date: r.audittime ? r.audittime.split('T')[0] : null,
+                    score: r.score
+                })).filter(d => d.date && d.score != null);
+
+                document.getElementById('detailChart').innerHTML = generateLargeChart(sparkData);
+
+                // Build history table
+                let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Score</th>
+                            <th>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                let prevScore = null;
+                // Show in reverse chronological order
+                const sortedRecords = [...records].sort((a, b) => new Date(b.audittime) - new Date(a.audittime));
+
+                sortedRecords.forEach(row => {
+                    const date = row.audittime ? row.audittime.split('T')[0] : '—';
+                    const score = row.score ?? '—';
+                    let change = '—';
+                    let rowClass = '';
+
+                    if (prevScore !== null && row.score != null) {
+                        const diff = row.score - prevScore;
+                        change = diff >= 0 ? `+${diff}` : diff;
+                        // Highlight if score >= 2300
+                        if (row.score >= 2300) {
+                            rowClass = ' style="background:#ffebee;"';
+                        }
+                    }
+                    prevScore = row.score;
+
+                    html += `<tr${rowClass}>
+                        <td>${escHtml(date)}</td>
+                        <td>${escHtml(score)}</td>
+                        <td>${escHtml(change)}</td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                document.getElementById('detailContent').innerHTML = html;
+
+            } catch (err) {
+                document.getElementById('detailContent').innerHTML =
+                    `<div class="error"><strong>Error:</strong> ${escHtml(err.message)}</div>`;
+            }
+        }
+
+        // Generate larger line chart for detail view
+        function generateLargeChart(sparkData) {
+            const THRESHOLD = 2300;
+            const width = 800;
+            const height = 150;
+            const padding = 30;
+            
+            if (sparkData.length === 0) {
+                return '<svg><text x="400" y="75" text-anchor="middle" fill="#999" font-size="14">No data</text></svg>';
+            }
+            
+            const scores = sparkData.map(d => d.score);
+            const minScore = Math.min(...scores);
+            const maxScore = Math.max(...scores);
+            const range = maxScore - minScore || 1;
+            
+            // Calculate points
+            const points = sparkData.map((d, i) => {
+                const x = padding + (i / (sparkData.length - 1)) * (width - 2 * padding);
+                const y = height - padding - ((d.score - minScore) / range) * (height - 2 * padding);
+                return { x, y, score: d.score, date: d.date };
+            });
+            
+            // Build line path
+            let pathD = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 1; i < points.length; i++) {
+                pathD += ` L ${points[i].x} ${points[i].y}`;
+            }
+            
+            // Check if any point is hot
+            const hasHot = points.some(p => p.score >= THRESHOLD);
+            const lineClass = hasHot ? 'sparkline-line hot' : 'sparkline-line';
+            
+            // Build dots
+            const dots = points.map(p => {
+                const isHot = p.score >= THRESHOLD;
+                const dotClass = isHot ? 'sparkline-dot hot' : 'sparkline-dot';
+                return `<circle cx="${p.x}" cy="${p.y}" r="4" class="${dotClass}" title="${p.date}: ${p.score}"/>`;
+            }).join('');
+            
+            return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:100%;">
+                <path d="${pathD}" class="${lineClass}"/>
+                ${dots}
+            </svg>`;
+        }
 
         // Calculate relative date label
         function getRelativeTime(dateStr) {
@@ -531,7 +678,7 @@
                 html += `
                     <tr>
                         <td>${escHtml(row.mtraccountid ?? '—')}</td>
-                        <td>${escHtml(row.name)}</td>
+                        <td><a href="#" onclick="showDetail('${escHtml(row.name)}');return false;" style="color:#007bff;text-decoration:none;font-weight:500;">${escHtml(row.name)}</a></td>
                         <td>${escHtml(row.score ?? '—')}</td>
                         <td class="date-cell"
                             data-relative="${escHtml(rel)}"
