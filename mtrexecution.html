@@ -314,6 +314,26 @@
             showView('detailView');
         });
 
+        // ── Paginated fetch helper (Supabase default limit is 1000) ──
+        async function fetchAllRows(table, select, orderCol, ascending = true) {
+            const PAGE_SIZE = 1000;
+            let allData = [];
+            let from = 0;
+            while (true) {
+                const { data, error } = await sb
+                    .from(table)
+                    .select(select)
+                    .order(orderCol, { ascending })
+                    .range(from, from + PAGE_SIZE - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                allData = allData.concat(data);
+                if (data.length < PAGE_SIZE) break; // last page
+                from += PAGE_SIZE;
+            }
+            return allData;
+        }
+
         // ── Load All Data ──
         async function loadAll() {
             showView('listView');
@@ -321,37 +341,27 @@
 
             try {
                 // 1. Load executions
-                const { data: execData, error: execErr } = await sb
-                    .from('mtrexecution')
-                    .select('mtrexecutionid, d, executionname')
-                    .order('mtrexecutionid', { ascending: false });
-                if (execErr) throw execErr;
-                executions = execData || [];
+                executions = await fetchAllRows('mtrexecution', 'mtrexecutionid, d, executionname', 'mtrexecutionid', false);
 
-                // 2. Load distinct account names from mtraccount_dbaudit
-                const { data: acctData, error: acctErr } = await sb
-                    .from('mtraccount_dbaudit')
-                    .select('name');
-                if (acctErr) throw acctErr;
+                // 2. Load account names from mtraccount_dbaudit (paginated)
+                const acctData = await fetchAllRows('mtraccount_dbaudit', 'name', 'auditid', true);
 
-                // Get unique non-empty names from mtraccount_dbaudit
+                // Get unique non-empty names
                 const nameSet = new Set();
-                (acctData || []).forEach(r => {
+                acctData.forEach(r => {
                     if (r.name && r.name.trim()) nameSet.add(r.name.trim());
                 });
 
-                // 3. Load all steps (we need them to compute status per execution per account)
-                const { data: stepsData, error: stepsErr } = await sb
-                    .from('mtrsteps')
-                    .select('mtrstepsid, d, mtrexecutionid, stage, wname, detail')
-                    .order('d', { ascending: true });
-                if (stepsErr) throw stepsErr;
+                // 3. Load ALL steps with pagination (can be 20k+ rows)
+                document.getElementById('listContent').innerHTML = '<p class="loading">⏳ Loading steps (this may take a moment)...</p>';
+                const stepsData = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true);
 
                 accountNames = Array.from(nameSet).sort();
+                console.log(`Loaded: ${executions.length} executions, ${accountNames.length} accounts, ${stepsData.length} steps`);
 
                 // Group steps by executionid
                 const stepsByExec = {};
-                (stepsData || []).forEach(s => {
+                stepsData.forEach(s => {
                     if (!stepsByExec[s.mtrexecutionid]) stepsByExec[s.mtrexecutionid] = [];
                     stepsByExec[s.mtrexecutionid].push(s);
                 });
@@ -362,7 +372,8 @@
                 document.getElementById('lastUpdated').textContent =
                     'Last fetched: ' + new Date().toLocaleString() +
                     ' | Executions: ' + executions.length +
-                    ' | Accounts: ' + accountNames.length;
+                    ' | Accounts: ' + accountNames.length +
+                    ' | Total steps: ' + stepsData.length;
 
             } catch (err) {
                 document.getElementById('listContent').innerHTML =
