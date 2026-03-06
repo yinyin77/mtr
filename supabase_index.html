@@ -357,6 +357,7 @@
                 if (!accountMap.has(name)) {
                     accountMap.set(name, {
                         name: name,
+                        mtraccountid: row.mtraccountid,
                         score: null,
                         audittime: null,
                         dailyScores: {}
@@ -365,6 +366,11 @@
 
                 const account = accountMap.get(name);
                 const auditDate = row.audittime ? row.audittime.split('T')[0] : null;
+
+                // Update mtraccountid if not set
+                if (account.mtraccountid == null && row.mtraccountid != null) {
+                    account.mtraccountid = row.mtraccountid;
+                }
 
                 // Update latest score and time
                 if (!account.audittime || (row.audittime && row.audittime > account.audittime)) {
@@ -483,8 +489,8 @@
             const rows = [...allRows];
             if (sortState === 'asc')  rows.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
             if (sortState === 'desc') rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-            // 'default' → alphabetical by name
-            if (sortState === 'default') rows.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+            // 'default' → sort by mtraccountid ascending
+            if (sortState === 'default') rows.sort((a, b) => (a.mtraccountid ?? 0) - (b.mtraccountid ?? 0));
             return rows;
         }
 
@@ -508,6 +514,7 @@
             <table>
                 <thead>
                     <tr>
+                        <th class="sortable ${sortState === 'default' ? 'asc' : ''}" id="idHeader">ID</th>
                         <th>Name</th>
                         <th class="sortable ${sortClass}" id="scoreHeader">Score</th>
                         <th>Latest Date</th>
@@ -523,6 +530,7 @@
                 
                 html += `
                     <tr>
+                        <td>${escHtml(row.mtraccountid ?? '—')}</td>
                         <td>${escHtml(row.name)}</td>
                         <td>${escHtml(row.score ?? '—')}</td>
                         <td class="date-cell"
@@ -535,6 +543,11 @@
 
             html += '</tbody></table>';
             document.getElementById('content').innerHTML = html;
+
+            document.getElementById('idHeader').addEventListener('click', () => {
+                sortState = getNextSort();
+                renderTable();
+            });
 
             document.getElementById('scoreHeader').addEventListener('click', () => {
                 sortState = getNextSort();
@@ -554,7 +567,7 @@
                 // Query all records from mtraccount_dbaudit
                 const { data, error } = await sb
                     .from('mtraccount_dbaudit')
-                    .select('name, score, audittime')
+                    .select('mtraccountid, name, score, audittime')
                     .order('audittime', { ascending: false });
 
                 if (error) throw error;
