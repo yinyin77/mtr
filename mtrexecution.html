@@ -175,11 +175,11 @@
 <body>
     <!-- Login Box -->
     <div id="loginBox">
-        <h2>🔒 MTR Execution Login</h2>
+        <h2>\ud83d\udd12 MTR Execution Login</h2>
         <label for="email">Email</label>
         <input type="email" id="email" placeholder="you@example.com" autocomplete="username">
         <label for="password">Password</label>
-        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        <input type="password" id="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" autocomplete="current-password">
         <button id="loginBtn">Sign In</button>
         <div id="loginErr"></div>
     </div>
@@ -190,7 +190,7 @@
         <!-- Execution List View -->
         <div id="listView" class="container">
             <div class="toolbar">
-                <h1>🚇 MTR Execution Dashboard</h1>
+                <h1>\ud83d\ude87 MTR Execution Dashboard</h1>
                 <div>
                     <span class="toolbar-left" id="userEmail"></span>
                     <button id="logoutBtn">Sign out</button>
@@ -198,15 +198,15 @@
             </div>
 
             <div class="nav-links">
-                <a href="supabase_index.html">← Back to Account Scores</a>
+                <a href="supabase_index.html">\u2190 Back to Account Scores</a>
             </div>
 
             <div class="info">
-                💡 Click on an execution row to see per-account completion status. Status is determined from <code>mtrsteps</code>: <strong>Finished</strong> = has <em>allfinished</em> record, <strong>Failed</strong> = last meaningful stage is <em>cannot start</em> with no later <em>allfinished</em>, <strong>In Progress</strong> = has steps but not finished/failed, <strong>Pending</strong> = no steps at all.
+                \ud83d\udca1 Click on an execution row to see per-account completion status. Status is determined from <code>mtrsteps</code>: <strong>Finished</strong> = has <em>allfinished</em> record, <strong>Failed</strong> = last meaningful stage is <em>cannot start</em> with no later <em>allfinished</em>, <strong>In Progress</strong> = has steps but not finished/failed, <strong>Pending</strong> = no steps at all.
             </div>
 
             <div id="listContent">
-                <p class="loading">⏳ Loading executions from Supabase...</p>
+                <p class="loading">\u23f3 Loading executions from Supabase...</p>
             </div>
 
             <div class="last-updated" id="lastUpdated"></div>
@@ -215,38 +215,38 @@
         <!-- Execution Detail View -->
         <div id="detailView" class="container" style="display:none;">
             <div class="toolbar">
-                <button class="back-btn" id="backBtn">← Back to List</button>
+                <button class="back-btn" id="backBtn">\u2190 Back to List</button>
                 <h2 id="detailTitle">Execution Detail</h2>
                 <div></div>
             </div>
 
             <div id="summarySection"></div>
             <div id="detailContent">
-                <p class="loading">⏳ Loading...</p>
+                <p class="loading">\u23f3 Loading...</p>
             </div>
         </div>
 
         <!-- Account Steps View -->
         <div id="stepsView" class="container" style="display:none;">
             <div class="toolbar">
-                <button class="back-btn" id="stepsBackBtn">← Back to Execution</button>
+                <button class="back-btn" id="stepsBackBtn">\u2190 Back to Execution</button>
                 <h2 id="stepsTitle">Account Steps</h2>
                 <div></div>
             </div>
             <div id="stepsContent">
-                <p class="loading">⏳ Loading steps...</p>
+                <p class="loading">\u23f3 Loading steps...</p>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        // ── Supabase config ──
+        // \u2500\u2500 Supabase config \u2500\u2500
         const SUPABASE_URL = 'https://dsgrqspgumeicsmxmikm.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_q_Dhn81pzvKMicizmxoO4w_J6lqBLPE';
         const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // ── State ──
+        // \u2500\u2500 State \u2500\u2500
         let executions = [];
         let accountNames = [];
         let currentExecId = null;
@@ -257,24 +257,24 @@
         }
 
         function formatDate(dateStr) {
-            if (!dateStr) return '—';
+            if (!dateStr) return '\u2014';
             const d = new Date(dateStr);
             return d.toLocaleDateString('en-CA') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         }
 
         function formatDateShort(dateStr) {
-            if (!dateStr) return '—';
+            if (!dateStr) return '\u2014';
             return new Date(dateStr).toLocaleDateString('en-CA');
         }
 
-        // ── Views ──
+        // \u2500\u2500 Views \u2500\u2500
         function showView(id) {
             ['listView', 'detailView', 'stepsView'].forEach(v => {
                 document.getElementById(v).style.display = v === id ? 'block' : 'none';
             });
         }
 
-        // ── Auth ──
+        // \u2500\u2500 Auth \u2500\u2500
         sb.auth.onAuthStateChange((event, session) => {
             if (session) {
                 showAppUI(session.user.email);
@@ -314,10 +314,10 @@
             showView('detailView');
         });
 
-        // ── Load All Data ──
+        // \u2500\u2500 Load All Data \u2500\u2500
         async function loadAll() {
             showView('listView');
-            document.getElementById('listContent').innerHTML = '<p class="loading">⏳ Loading executions...</p>';
+            document.getElementById('listContent').innerHTML = '<p class="loading">\u23f3 Loading executions...</p>';
 
             try {
                 // 1. Load executions
@@ -334,12 +334,11 @@
                     .select('name');
                 if (acctErr) throw acctErr;
 
-                // Get unique non-empty names
+                // Get unique non-empty names from mtraccount_dbaudit
                 const nameSet = new Set();
                 (acctData || []).forEach(r => {
                     if (r.name && r.name.trim()) nameSet.add(r.name.trim());
                 });
-                accountNames = Array.from(nameSet).sort();
 
                 // 3. Load all steps (we need them to compute status per execution per account)
                 // Fetch all steps - for each execution we need to know per-account status
@@ -348,6 +347,12 @@
                     .select('mtrstepsid, d, mtrexecutionid, stage, wname, detail')
                     .order('d', { ascending: true });
                 if (stepsErr) throw stepsErr;
+
+                // Also collect unique wname values from mtrsteps into the account set
+                (stepsData || []).forEach(s => {
+                    if (s.wname && s.wname.trim()) nameSet.add(s.wname.trim());
+                });
+                accountNames = Array.from(nameSet).sort();
 
                 // Group steps by executionid
                 const stepsByExec = {};
@@ -370,7 +375,7 @@
             }
         }
 
-        // ── Determine account status for a given execution ──
+        // \u2500\u2500 Determine account status for a given execution \u2500\u2500
         // Returns: 'finished' | 'failed' | 'progress' | 'pending'
         function getAccountStatus(steps, accountName) {
             // Filter steps for this account (wname matches accountName)
@@ -393,21 +398,21 @@
                 return 'failed';
             }
 
-            // Has steps but not finished and not failed → in progress
+            // Has steps but not finished and not failed \u2192 in progress
             return 'progress';
         }
 
         function getStatusLabel(status) {
             const map = {
-                finished: '<span class="badge badge-finished">✅ Finished</span>',
-                failed:   '<span class="badge badge-failed">❌ Failed</span>',
-                progress: '<span class="badge badge-progress">⏳ In Progress</span>',
-                pending:  '<span class="badge badge-pending">⬜ Pending</span>'
+                finished: '<span class="badge badge-finished">\u2705 Finished</span>',
+                failed:   '<span class="badge badge-failed">\u274c Failed</span>',
+                progress: '<span class="badge badge-progress">\u23f3 In Progress</span>',
+                pending:  '<span class="badge badge-pending">\u2b1c Pending</span>'
             };
             return map[status] || status;
         }
 
-        // ── Render Execution List ──
+        // \u2500\u2500 Render Execution List \u2500\u2500
         let stepsByExecGlobal = {};
 
         function renderExecutionList(stepsByExec) {
@@ -445,7 +450,7 @@
                 html += `<tr class="clickable-row" onclick="showExecDetail(${exec.mtrexecutionid})">
                     <td><strong>${escHtml(exec.mtrexecutionid)}</strong></td>
                     <td>${escHtml(formatDate(exec.d))}</td>
-                    <td>${escHtml(exec.executionname || '—')}</td>
+                    <td>${escHtml(exec.executionname || '\u2014')}</td>
                     <td><span class="badge badge-finished">${counts.finished}</span></td>
                     <td><span class="badge badge-failed">${counts.failed}</span></td>
                     <td><span class="badge badge-progress">${counts.progress}</span></td>
@@ -458,14 +463,14 @@
             document.getElementById('listContent').innerHTML = html;
         }
 
-        // ── Show Execution Detail ──
+        // \u2500\u2500 Show Execution Detail \u2500\u2500
         function showExecDetail(execId) {
             currentExecId = execId;
             showView('detailView');
 
             const exec = executions.find(e => e.mtrexecutionid === execId);
             document.getElementById('detailTitle').textContent =
-                `Execution #${execId}: ${exec ? (exec.executionname || '—') : ''}`;
+                `Execution #${execId}: ${exec ? (exec.executionname || '\u2014') : ''}`;
 
             const steps = stepsByExecGlobal[execId] || [];
             let counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
@@ -489,10 +494,10 @@
             let summaryHtml = `
                 <div class="summary-bar">
                     <div class="summary-card card-total"><div class="num">${total}</div><div class="label">Total Accounts</div></div>
-                    <div class="summary-card card-finished"><div class="num">${counts.finished}</div><div class="label">✅ Finished</div></div>
-                    <div class="summary-card card-failed"><div class="num">${counts.failed}</div><div class="label">❌ Failed</div></div>
-                    <div class="summary-card card-progress"><div class="num">${counts.progress}</div><div class="label">⏳ In Progress</div></div>
-                    <div class="summary-card card-pending"><div class="num">${counts.pending}</div><div class="label">⬜ Pending</div></div>
+                    <div class="summary-card card-finished"><div class="num">${counts.finished}</div><div class="label">\u2705 Finished</div></div>
+                    <div class="summary-card card-failed"><div class="num">${counts.failed}</div><div class="label">\u274c Failed</div></div>
+                    <div class="summary-card card-progress"><div class="num">${counts.progress}</div><div class="label">\u23f3 In Progress</div></div>
+                    <div class="summary-card card-pending"><div class="num">${counts.pending}</div><div class="label">\u2b1c Pending</div></div>
                 </div>
                 <div class="progress-wrap">
                     <div class="progress-seg seg-finished" style="width:${pctFinished}%">${pctFinished > 5 ? pctFinished + '%' : ''}</div>
@@ -520,8 +525,8 @@
                     <td><strong>${escHtml(a.name)}</strong></td>
                     <td>${getStatusLabel(a.status)}</td>
                     <td>${a.stepCount}</td>
-                    <td>${a.lastStep ? escHtml(a.lastStep.stage) : '—'}</td>
-                    <td>${a.lastStep ? escHtml(a.lastStep.detail) : '—'}</td>
+                    <td>${a.lastStep ? escHtml(a.lastStep.stage) : '\u2014'}</td>
+                    <td>${a.lastStep ? escHtml(a.lastStep.detail) : '\u2014'}</td>
                 </tr>`;
             });
 
@@ -529,7 +534,7 @@
             document.getElementById('detailContent').innerHTML = html;
         }
 
-        // ── Show Account Steps for an Execution ──
+        // \u2500\u2500 Show Account Steps for an Execution \u2500\u2500
         function showAccountSteps(execId, accountName) {
             showView('stepsView');
             document.getElementById('stepsTitle').textContent =
@@ -573,6 +578,3 @@
             html += '</tbody></table>';
             document.getElementById('stepsContent').innerHTML = html;
         }
-    </script>
-</body>
-</html>
