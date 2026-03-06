@@ -348,10 +348,6 @@
                     .order('d', { ascending: true });
                 if (stepsErr) throw stepsErr;
 
-                // Also collect unique wname values from mtrsteps into the account set
-                (stepsData || []).forEach(s => {
-                    if (s.wname && s.wname.trim()) nameSet.add(s.wname.trim());
-                });
                 accountNames = Array.from(nameSet).sort();
 
                 // Group steps by executionid
