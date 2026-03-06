@@ -287,6 +287,181 @@
         let sortState = 'default';
         let allRows   = [];
 
+        // Calculate relative date label
+        function getRelativeTime(dateStr) {
+            if (!dateStr) return '—';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const score = new Date(dateStr);
+            score.setHours(0, 0, 0, 0);
+            const diff = Math.round((today - score) / 86400000);
+            if (diff === 0) return 'today';
+            if (diff === 1) return '1 day ago';
+            if (diff > 1)  return diff + ' days ago';
+            if (diff === -1) return 'tomorrow';
+            return Math.abs(diff) + ' days later';
+        }
+
+        function escHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&')
+                .replace(/</g, '<')
+                .replace(/>/g, '>')
+                .replace(/"/g, '"');
+        }
+
+        // Generate last 7 days date strings (YYYY-MM-DD)
+        function getLast7Days() {
+            const days = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                days.push(d.toISOString().split('T')[0]);
+            }
+            return days;
+        }
+
+        // Process raw data into grouped account data
+        function processData(data) {
+            const accountMap = new Map();
+            const last7Days = getLast7Days();
+
+            data.forEach(row => {
+                const name = row.name;
+                if (!name) return;
+
+                if (!accountMap.has(name)) {
+                    accountMap.set(name, {
+                        name: name,
+                        mtraccountid: row.mtraccountid,
+                        score: null,
+                        audittime: null,
+                        dailyScores: {}
+                    });
+                }
+
+                const account = accountMap.get(name);
+                const auditDate = row.audittime ? row.audittime.split('T')[0] : null;
+
+                // Update mtraccountid if not set
+                if (account.mtraccountid == null && row.mtraccountid != null) {
+                    account.mtraccountid = row.mtraccountid;
+                }
+
+                // Update latest score and time
+                if (!account.audittime || (row.audittime && row.audittime > account.audittime)) {
+                    account.audittime = row.audittime;
+                    account.score = row.score;
+                }
+
+                // Track daily score (latest score for each day)
+                if (auditDate && row.score != null) {
+                    // Keep the latest score for each day
+                    if (!account.dailyScores[auditDate] || row.audittime > account.dailyScores[auditDate].audittime) {
+                        account.dailyScores[auditDate] = {
+                            score: row.score,
+                            audittime: row.audittime
+                        };
+                    }
+                }
+            });
+
+            // Convert to array and add sparkline data
+            return Array.from(accountMap.values()).map(account => {
+                // Build sparkline data for last 7 days
+                const sparkData = last7Days.map(date => {
+                    const dayData = account.dailyScores[date];
+                    return {
+                        date: date,
+                        score: dayData ? dayData.score : null
+                    };
+                });
+
+                return {
+                    ...account,
+                    sparkData: sparkData
+                };
+            });
+        }
+
+        // Generate line chart sparkline HTML - cumulative score changes
+        function generateSparkline(sparkData) {
+            const THRESHOLD = 2300;
+            const width = 70;
+            const height = 20;
+            const padding = 2;
+            
+            // Get valid scores and find first score
+            const validData = sparkData.filter(d => d.score != null);
+            if (validData.length === 0) {
+                return '<svg><text x="35" y="12" text-anchor="middle" fill="#999" font-size="8">No data</text></svg>';
+            }
+            
+            // Get the first score as baseline
+            const firstScore = validData[0].score;
+            
+            // Calculate cumulative changes from first score
+            const changes = sparkData.map(d => {
+                if (d.score == null) return null;
+                return {
+                    date: d.date,
+                    change: d.score - firstScore
+                };
+            });
+            
+            const changeValues = changes.filter(c => c != null).map(c => c.change);
+            const minChange = Math.min(...changeValues);
+            const maxChange = Math.max(...changeValues);
+            const range = maxChange - minChange || 1;
+            
+            // Calculate points
+            const points = changes.map((d, i) => {
+                const x = padding + (i / (changes.length - 1)) * (width - 2 * padding);
+                let y;
+                if (d == null || d.change == null) {
+                    y = null;
+                } else {
+                    y = height - padding - ((d.change - minChange) / range) * (height - 2 * padding);
+                }
+                return { x, y, change: d ? d.change : null, date: d ? d.date : null };
+            }).filter(p => p.y !== null);
+            
+            if (points.length < 2) {
+                // Single point or no points
+                if (points.length === 1) {
+                    const p = points[0];
+                    const changeStr = p.change >= 0 ? `+${p.change}` : p.change;
+                    return `<svg title="${p.date}: ${changeStr}">
+                        <circle cx="${p.x}" cy="${p.y}" r="3" class="sparkline-dot"/>
+                    </svg>`;
+                }
+                return '<svg><text x="35" y="12" text-anchor="middle" fill="#999" font-size="8">No data</text></svg>';
+            }
+            
+            // Build line path
+            let pathD = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 1; i < points.length; i++) {
+                pathD += ` L ${points[i].x} ${points[i].y}`;
+            }
+            
+            // Check if any point has change >= 2300
+            const hasHot = points.some(p => p.change >= THRESHOLD);
+            const lineClass = hasHot ? 'sparkline-line hot' : 'sparkline-line';
+            
+            // Build dots with tooltips showing cumulative change
+            const dots = points.map(p => {
+                const changeStr = p.change >= 0 ? `+${p.change}` : p.change;
+                const dotClass = p.change >= THRESHOLD ? 'sparkline-dot hot' : 'sparkline-dot';
+                return `<circle cx="${p.x}" cy="${p.y}" r="2" class="${dotClass}" title="${p.date}: ${changeStr}"/>`;
+            }).join('');
+            
+            return `<svg>
+                <path d="${pathD}" class="${lineClass}"/>
+                ${dots}
+            </svg>`;
+        }
+
         // ── Auth state ─────────────────────────────────────────────────────
         sb.auth.onAuthStateChange((event, session) => {
             if (session) {
