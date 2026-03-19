@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Cube Net Test - Fixed Validation</title>
+  <style>
+    :root{
+      --bg:#f6f6f3;
+      --panel:#ffffff;
+      --line:#202020;
+      --soft:#ececec;
+      --text:#1f2937;
+      --muted:#6b7280;
+      --accent:#2563eb;
+      --ok:#16a34a;
+      --bad:#dc2626;
+      --shadow:0 10px 26px rgba(0,0,0,.08);
+      --left-col:min(40vw,360px);
+      --bottom-bar:84px;
+    }
+    *{box-sizing:border-box}
+    html,body{
+      margin:0;
+      height:100%;
+      overflow:hidden;
+      background:linear-gradient(180deg,#fbfbf9,#f1f1ee);
+      color:var(--text);
+      font-family:Arial,"Noto Sans TC","Microsoft JhengHei",sans-serif;
+    }
+    body{
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+    }
+    .app{
+      height:100dvh;
+      display:flex;
+      flex-direction:column;
+      padding:10px;
+      gap:10px;
+    }
+    .topbar{
+      flex:0 0 auto;
+      background:var(--panel);
+      border:1px solid #ececec;
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      padding:10px 12px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .title-wrap{
+      min-width:220px;
+      flex:1 1 420px;
+    }
+    .title{
+      margin:0;
+      font-size:clamp(18px,2.4vw,32px);
+      line-height:1.15;
+      font-weight:800;
+    }
+    .question{
+      margin-top:6px;
+      font-size:clamp(13px,1.8vw,18px);
+      color:#374151;
+      line-height:1.5;
+    }
+    .toolrow{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      align-items:center;
+    }
+    button{
+      border:0;
+      border-radius:12px;
+      padding:10px 14px;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+      color:#fff;
+      background:#111827;
+      white-space:nowrap;
+    }
+    button.secondary{background:#6b7280}
+    button.primary{background:#2563eb}
+    button.good{background:#16a34a}
+    .score{
+      flex:0 0 auto;
+      background:var(--panel);
+      border:1px solid #ececec;
+      border-radius:14px;
+      padding:10px 14px;
+      box-shadow:var(--shadow);
+      font-size:14px;
+      font-weight:700;
+      color:#555;
+    }
+
+    .main{
+      flex:1 1 auto;
+      min-height:0;
+      display:grid;
+      grid-template-columns:var(--left-col) minmax(0,1fr);
+      gap:10px;
+    }
+
+    .left-panel{
+      min-width:0;
+      background:var(--panel);
+      border:1px solid #ececec;
+      border-radius:22px;
+      box-shadow:var(--shadow);
+      padding:12px;
+      display:flex;
+      flex-direction:column;
+      min-height:0;
+    }
+    .left-sticky{
+      position:sticky;
+      top:0;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-height:0;
+      height:100%;
+    }
+    .panel-title{
+      font-size:15px;
+      font-weight:900;
+      color:var(--muted);
+      letter-spacing:.02em;
+    }
+    .net-holder{
+      flex:1 1 auto;
+      min-height:0;
+      border-radius:18px;
+      background:#fff;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:auto;
+      border:1px solid #f0f0f0;
+      padding:8px;
+    }
+    .net-holder svg{
+      width:100%;
+      height:auto;
+      max-height:100%;
+      display:block;
+    }
+    .left-note{
+      font-size:12px;
+      line-height:1.6;
+      color:#7a7a7a;
+      background:#fafafa;
+      border:1px solid #efefef;
+      border-radius:12px;
+      padding:10px 12px;
+    }
+
+    .right-panel{
+      min-width:0;
+      background:var(--panel);
+      border:1px solid #ececec;
+      border-radius:22px;
+      box-shadow:var(--shadow);
+      padding:12px;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .choices-scroll{
+      flex:1 1 auto;
+      min-height:0;
+      overflow:auto;
+      padding-right:2px;
+    }
+    .choices{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:12px;
+      align-items:start;
+    }
+    .choice{
+      position:relative;
+      min-height:182px;
+      border:2px solid #e7e7e7;
+      border-radius:18px;
+      background:#fff;
+      padding:10px;
+      cursor:pointer;
+      transition:.18s ease;
+      overflow:hidden;
+    }
+    .choice:hover{
+      transform:translateY(-2px);
+      box-shadow:0 10px 18px rgba(0,0,0,.06);
+    }
+    .choice.selected{
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(37,99,235,.12);
+    }
+    .choice.correct{
+      border-color:var(--ok);
+      box-shadow:0 0 0 3px rgba(22,163,74,.12);
+    }
+    .choice.wrong{
+      border-color:var(--bad);
+      box-shadow:0 0 0 3px rgba(220,38,38,.10);
+    }
+    .badge{
+      position:absolute;
+      top:8px;
+      left:8px;
+      width:34px;
+      height:34px;
+      border-radius:10px;
+      background:#bdbdbd;
+      color:#fff;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:22px;
+      font-weight:900;
+      z-index:2;
+    }
+    .glbox{
+      width:100%;
+      height:150px;
+      margin-top:8px;
+      border-radius:14px;
+      overflow:hidden;
+      background:#fff;
+    }
+
+    .bottom-bar{
+      flex:0 0 auto;
+      position:sticky;
+      bottom:0;
+      background:var(--panel);
+      border:1px solid #ececec;
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      padding:10px;
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:10px;
+      align-items:center;
+      min-height:var(--bottom-bar);
+    }
+    .result{
+      min-height:50px;
+      border:1px solid #ececec;
+      background:#fafafa;
+      border-radius:14px;
+      padding:12px 14px;
+      line-height:1.5;
+      overflow:auto;
+    }
+    .actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    @media (max-width:980px){
+      :root{ --left-col:40vw; }
+      .choices{ grid-template-columns:1fr; }
+      .choice{ min-height:170px; }
+      .glbox{ height:136px; }
+    }
+
+    @media (max-width:720px){
+      :root{
+        --left-col:42vw;
+        --bottom-bar:96px;
+      }
+      .app{ padding:8px; gap:8px; }
+      .topbar{ border-radius:14px; padding:8px 10px; }
+      .left-panel,.right-panel{ border-radius:16px; padding:10px; }
+      .panel-title{ font-size:14px; }
+      .choice{ min-height:156px; padding:8px; }
+      .glbox{ height:126px; }
+      .badge{ width:30px; height:30px; font-size:20px; }
+      button{ padding:10px 12px; font-size:13px; }
+      .bottom-bar{ grid-template-columns:1fr; }
+      .actions{ justify-content:stretch; }
+      .actions button{ flex:1 1 0; }
+    }
+
+    @media (max-width:480px){
+      :root{ --left-col:44vw; }
+      .title{ font-size:18px; }
+      .question{ font-size:12px; }
+      .left-note{ font-size:11px; padding:8px 10px; }
+      .choices{ gap:10px; }
+      .choice{ min-height:146px; }
+      .glbox{ height:118px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title-wrap">
+        <h1 class="title">Spatial Reasoning: Cube Nets</h1>
+        <div class="question" id="questionBar">下列哪一個立方體可以由左側的 2D 展開圖摺成？</div>
+      </div>
+      <div class="toolrow">
+        <button class="secondary" id="langBtn">切換語言：中文</button>
+        <button class="secondary" id="styleBtn">圖案風格：幾何符號</button>
+        <button class="primary" id="newBtn">出新題</button>
+      </div>
+    </div>
+
+    <div class="score" id="score">題數：0　答對：0</div>
+
+    <div class="main">
+      <section class="left-panel">
+        <div class="left-sticky">
+          <div class="panel-title" id="leftTitle">2D 展開圖</div>
+          <div class="net-holder" id="netHolder"></div>
+          <div class="left-note" id="leftNote">
+            所有選項都是真正完整立方體，避免出現不可能的相鄰關係。
+          </div>
+        </div>
+      </section>
+
+      <section class="right-panel">
+        <div class="panel-title" id="rightTitle">選項</div>
+        <div class="choices-scroll">
+          <div class="choices" id="choices"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="result" id="result">請選擇 A–E 其中一個答案。</div>
+      <div class="actions">
+        <button class="secondary" id="showBtn">顯示答案</button>
+        <button class="good" id="checkBtn">提交答案</button>
+        <button class="primary" id="nextBtn">下一題</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+    const letters = ["A","B","C","D","E"];
+    let lang = "zh";
+    let styleMode = "geo";
+    let totalCount = 0;
+    let correctCount = 0;
+    let selectedIndex = null;
+    let currentQuestion = null;
+    let renderers = [];
+
+    const questionBar = document.getElementById("questionBar");
+    const netHolder = document.getElementById("netHolder");
+    const choicesEl = document.getElementById("choices");
+    const resultEl = document.getElementById("result");
+    const scoreEl = document.getElementById("score");
+    const leftTitle = document.getElementById("leftTitle");
+    const rightTitle = document.getElementById("rightTitle");
+    const leftNote = document.getElementById("leftNote");
+    const langBtn = document.getElementById("langBtn");
+    const styleBtn = document.getElementById("styleBtn");
+
+    function neg(v){ return [-v[0],-v[1],-v[2]]; }
+    function eq(a,b){ return a[0]===b[0] && a[1]===b[1] && a[2]===b[2]; }
+    function dot(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+    function cross(a,b){
+      return [
+        a[1]*b[2]-a[2]*b[1],
+        a[2]*b[0]-a[0]*b[2],
+        a[0]*b[1]-a[1]*b[0]
+      ];
+    }
+    function vkey(v){ return v.join(","); }
+    function shuffle(a){
+      const x=[...a];
+      for(let i=x.length-1;i>0;i--){
+        const j=Math.floor(Math.random()*(i+1));
+        [x[i],x[j]]=[x[j],x[i]];
+      }
+      return x;
+    }
+    function pickOne(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+    const ALL_NORMALS = [
+      [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]
+    ];
+
+    const NET_SHAPES = [
+      [[0,0],[1,0],[-1,0],[0,-1],[0,1],[0,2]],
+      [[0,0],[1,0],[2,0],[1,-1],[1,1],[1,2]],
+      [[0,0],[1,0],[2,0],[2,1],[3,1],[2,2]],
+      [[0,0],[0,1],[0,2],[1,2],[2,2],[2,3]],
+      [[0,0],[1,0],[1,1],[1,2],[2,2],[3,2]],
+      [[0,0],[0,1],[1,1],[2,1],[2,2],[2,3]],
+      [[0,0],[1,0],[2,0],[2,-1],[2,1],[3,1]],
+      [[0,0],[0,1],[1,1],[1,2],[1,3],[2,3]],
+      [[0,0],[1,0],[1,1],[2,1],[2,2],[2,3]],
+      [[0,0],[1,0],[1,-1],[1,1],[2,1],[2,2]],
+      [[0,0],[0,1],[1,1],[1,2],[2,2],[2,1]]
+    ];
+
+    function normalizeCoords(coords){
+      const xs = coords.map(c=>c[0]);
+      const ys = coords.map(c=>c[1]);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      return coords.map(([x,y])=>[x-minX,y-minY]);
+    }
+    function rot90(coords){ return coords.map(([x,y])=>[-y,x]); }
+    function flipX(coords){ return coords.map(([x,y])=>[-x,y]); }
+    function randomTransformNet(shape){
+      let c = shape.map(([x,y])=>[x,y]);
+      const rotateTimes = Math.floor(Math.random()*4);
+      for(let i=0;i<rotateTimes;i++) c = rot90(c);
+      if(Math.random()<0.5) c = flipX(c);
+      return normalizeCoords(c);
+    }
+
+    function buildAdjacency(coords){
+      const map = new Map();
+      coords.forEach((p,i)=>map.set(`${p[0]},${p[1]}`, i));
+      const adj = Array.from({length:coords.length},()=>[]);
+      coords.forEach(([x,y],i)=>{
+        const dirs = [[1,0,"E"],[-1,0,"W"],[0,1,"S"],[0,-1,"N"]];
+        dirs.forEach(([dx,dy,dir])=>{
+          const j = map.get(`${x+dx},${y+dy}`);
+          if(j!==undefined) adj[i].push({to:j, dir});
+        });
+      });
+      return adj;
+    }
+
+    function rotateBasis(u,v,n,dir){
+      if(dir==="E") return { u:neg(n), v:v, n:u };
+      if(dir==="W") return { u:n, v:v, n:neg(u) };
+      if(dir==="N") return { u:u, v:neg(n), n:v };
+      if(dir==="S") return { u:u, v:n, n:neg(v) };
+    }
+
+    function foldNet(coords, assignedSymbols){
+      const adj = buildAdjacency(coords);
+      const placed = {};
+      placed[0] = { u:[1,0,0], v:[0,1,0], n:[0,0,1] };
+
+      const queue = [0];
+      while(queue.length){
+        const i = queue.shift();
+        const basis = placed[i];
+        for(const edge of adj[i]){
+          if(placed[edge.to]) continue;
+          placed[edge.to] = rotateBasis(basis.u,basis.v,basis.n,edge.dir);
+          queue.push(edge.to);
+        }
+      }
+
+      const usedNormals = new Set();
+      for(const k in placed){
+        const nk = vkey(placed[k].n);
+        if(usedNormals.has(nk)) return null;
+        usedNormals.add(nk);
+      }
+      if(usedNormals.size !== 6) return null;
+
+      const byNormal = {};
+      coords.forEach((_,i)=>{
+        byNormal[vkey(placed[i].n)] = {
+          symbol: assignedSymbols[i],
+          basis: placed[i],
+          index:i
+        };
+      });
+
+      return { coords, placed, byNormal, assignedSymbols };
+    }
+
+    const symbolSets = {
+      geo: [
+        {id:"solidTri", type:"solidTri", dir:[1,-1], rotationalSymmetry:1},
+        {id:"dot", type:"dot", dir:[0,-1], rotationalSymmetry:999},
+        {id:"hbar", type:"hbar", dir:[1,0], rotationalSymmetry:2},
+        {id:"ring", type:"ring", dir:[0,-1], rotationalSymmetry:999},
+        {id:"xmark", type:"xmark", dir:[1,-1], rotationalSymmetry:2},
+        {id:"outlineTri", type:"outlineTri", dir:[0,-1], rotationalSymmetry:1}
+      ],
+      mark: [
+        {id:"arrow", type:"arrow", dir:[0,-1], rotationalSymmetry:1},
+        {id:"diamond", type:"diamond", dir:[0,-1], rotationalSymmetry:4},
+        {id:"oval", type:"oval", dir:[0,-1], rotationalSymmetry:2},
+        {id:"plus", type:"plus", dir:[0,-1], rotationalSymmetry:4},
+        {id:"doubleBar", type:"doubleBar", dir:[1,0], rotationalSymmetry:2},
+        {id:"cornerTri", type:"cornerTri", dir:[1,-1], rotationalSymmetry:1}
+      ]
+    };
+
+    const views = [
+      {top:[0,1,0], front:[0,0,1], right:[1,0,0]},
+      {top:[1,0,0], front:[0,0,1], right:[0,-1,0]},
+      {top:[0,1,0], front:[-1,0,0], right:[0,0,1]},
+      {top:[0,0,1], front:[0,-1,0], right:[1,0,0]},
+      {top:[-1,0,0], front:[0,1,0], right:[0,0,1]},
+      {top:[0,0,-1], front:[1,0,0], right:[0,1,0]},
+      {top:[0,1,0], front:[1,0,0], right:[0,0,-1]},
+      {top:[0,-1,0], front:[0,0,1], right:[-1,0,0]},
+      {top:[0,0,1], front:[1,0,0], right:[0,1,0]},
+      {top:[1,0,0], front:[0,-1,0], right:[0,0,-1]}
+    ];
+
+    function projectedFaceAxes(faceBasis, cameraDir){
+      const worldUp = [0,1,0];
+      let sr = cross(worldUp, cameraDir);
+      const srLen = Math.hypot(...sr) || 1;
+      sr = sr.map(v => v/srLen);
+
+      let su = cross(cameraDir, sr);
+      const suLen = Math.hypot(...su) || 1;
+      su = su.map(v => v/suLen);
+
+      const u2 = [dot(faceBasis.u, sr), dot(faceBasis.u, su)];
+      const v2 = [dot(faceBasis.v, sr), dot(faceBasis.v, su)];
+      return {u2,v2};
+    }
+
+    function transformLocalDirToScreen(localDir, faceBasis, cameraDir){
+      const {u2,v2} = projectedFaceAxes(faceBasis, cameraDir);
+      const x = localDir[0]*u2[0] + localDir[1]*v2[0];
+      const y = localDir[0]*u2[1] + localDir[1]*v2[1];
+      return [x,y];
+    }
+
+    function quantize8(dir){
+      const [x,y] = dir;
+      let idx = Math.round(Math.atan2(y,x)/(Math.PI/4));
+      if(idx<0) idx += 8;
+      return idx % 8;
+    }
+
+    function visibleFaceData(cube, view){
+      const camPos = [2.8,2.45,3.2];
+      const len = Math.hypot(...camPos);
+      const camDir = camPos.map(v => -v/len);
+
+      const topFace = cube.byNormal[vkey(view.top)];
+      const frontFace = cube.byNormal[vkey(view.front)];
+      const rightFace = cube.byNormal[vkey(view.right)];
+
+      return {
+        top: enrichVisibleFace(topFace, camDir),
+        front: enrichVisibleFace(frontFace, camDir),
+        right: enrichVisibleFace(rightFace, camDir),
+        view
+      };
+    }
+
+    function enrichVisibleFace(faceObj, camDir){
+      const sym = faceObj.symbol;
+      const screenDir = transformLocalDirToScreen(sym.dir, faceObj.basis, camDir);
+      return {
+        symbolId: sym.id,
+        type: sym.type,
+        rotationalSymmetry: sym.rotationalSymmetry,
+        localDir:[...sym.dir],
+        screenDir,
+        screenQuant8: quantize8(screenDir)
+      };
+    }
+
+    function signatureStrict(vis){
+      return [
+        vis.top.symbolId + "@" + vis.top.screenQuant8,
+        vis.front.symbolId + "@" + vis.front.screenQuant8,
+        vis.right.symbolId + "@" + vis.right.screenQuant8
+      ].join("|");
+    }
+
+    function chooseValidRandomNet(symbols){
+      const shuffledShapes = shuffle(NET_SHAPES);
+      for(const base of shuffledShapes){
+        for(let t=0;t<16;t++){
+          const coords = randomTransformNet(base);
+          const cube = foldNet(coords, symbols);
+          if(cube) return cube;
+        }
+      }
+      return foldNet(randomTransformNet(NET_SHAPES[0]), symbols);
+    }
+
+    function permutationSignature(cube){
+      return ALL_NORMALS.map(n => cube.byNormal[vkey(n)].symbol.id).join("|");
+    }
+
+    function generateAlternativeCube(symbols, correctSig, usedSigs){
+      for(let tries=0; tries<300; tries++){
+        const shuffled = shuffle(symbols).map(s=>({...s}));
+        const cube = chooseValidRandomNet(shuffled);
+        const sig = permutationSignature(cube);
+        if(sig !== correctSig && !usedSigs.has(sig)){
+          usedSigs.add(sig);
+          return cube;
+        }
+      }
+      return null;
+    }
+
+    function generateQuestion(){
+      const symbols = shuffle(symbolSets[styleMode]).map(s => ({...s}));
+      const correctCube = chooseValidRandomNet(symbols);
+      const correctCubeSig = permutationSignature(correctCube);
+
+      const correctView = pickOne(views);
+      const correctVisible = visibleFaceData(correctCube, correctView);
+      const correctVisibleSig = signatureStrict(correctVisible);
+
+      const optionEntries = [{
+        cube: correctCube,
+        view: correctView,
+        visible: correctVisible,
+        correct: true
+      }];
+
+      const usedCubeSigs = new Set([correctCubeSig]);
+      const usedVisibleSigs = new Set([correctVisibleSig]);
+
+      let guard = 0;
+      while(optionEntries.length < 5 && guard < 1200){
+        guard++;
+        const altCube = generateAlternativeCube(symbols, correctCubeSig, usedCubeSigs);
+        if(!altCube) continue;
+
+        const candidateViews = shuffle(views);
+        let accepted = false;
+
+        for(const vw of candidateViews){
+          const vis = visibleFaceData(altCube, vw);
+          const sig = signatureStrict(vis);
+          if(usedVisibleSigs.has(sig)) continue;
+          usedVisibleSigs.add(sig);
+          optionEntries.push({
+            cube: altCube,
+            view: vw,
+            visible: vis,
+            correct: false
+          });
+          accepted = true;
+          break;
+        }
+
+        if(!accepted){
+          // this alternative cube produced duplicate visible signatures for all chosen checks
+          // let loop continue and try another cube
+        }
+      }
+
+      // fallback: if still short, keep same cube but different real views, never using the correct visible signature
+      if(optionEntries.length < 5){
+        const fallbackViews = shuffle(views);
+        for(const vw of fallbackViews){
+          if(optionEntries.length >= 5) break;
+          const vis = visibleFaceData(correctCube, vw);
+          const sig = signatureStrict(vis);
+          if(sig === correctVisibleSig) continue;
+          if(usedVisibleSigs.has(sig)) continue;
+          usedVisibleSigs.add(sig);
+          optionEntries.push({
+            cube: correctCube,
+            view: vw,
+            visible: vis,
+            correct: false
+          });
+        }
+      }
+
+      const options = shuffle(optionEntries).slice(0,5);
+      return {
+        cube: correctCube,
+        options,
+        correctIndex: options.findIndex(x => x.correct)
+      };
+    }
+
+    function svgEl(tag, attrs={}){
+      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for(const k in attrs) el.setAttribute(k, attrs[k]);
+      return el;
+    }
+
+    function drawOrientedSymbolSVG(svg, type, x, y, size, color="#111", dir=[0,-1]){
+      const g = svgEl("g");
+      const cx = x + size/2;
+      const cy = y + size/2;
+      const ang = Math.atan2(dir[1], dir[0]) + Math.PI/2;
+      const deg = ang * 180 / Math.PI;
+      g.setAttribute("transform", `translate(${cx} ${cy}) rotate(${deg}) translate(${-cx} ${-cy})`);
+
+      const sw = Math.max(2, size*0.05);
+      function add(node){ g.appendChild(node); }
+
+      if(type==="solidTri"){
+        add(svgEl("polygon", {points:`${x+size*0.18},${y+size*0.18} ${x+size*0.82},${y+size*0.18} ${x+size*0.18},${y+size*0.82}`, fill:color}));
+      } else if(type==="dot"){
+        add(svgEl("circle", {cx:x+size/2, cy:y+size/2, r:size*0.16, fill:color}));
+      } else if(type==="hbar"){
+        add(svgEl("rect", {x:x+size*0.16, y:y+size*0.42, width:size*0.68, height:size*0.16, fill:color}));
+      } else if(type==="ring"){
+        add(svgEl("circle", {cx:x+size/2, cy:y+size/2, r:size*0.28, fill:"none", stroke:color, "stroke-width":sw}));
+      } else if(type==="xmark"){
+        add(svgEl("line", {x1:x+size*0.2, y1:y+size*0.2, x2:x+size*0.8, y2:y+size*0.8, stroke:color, "stroke-width":sw}));
+        add(svgEl("line", {x1:x+size*0.8, y1:y+size*0.2, x2:x+size*0.2, y2:y+size*0.8, stroke:"#b9b9b9", "stroke-width":sw*0.75}));
+      } else if(type==="outlineTri"){
+        add(svgEl("polygon", {points:`${x+size/2},${y+size*0.12} ${x+size*0.84},${y+size*0.84} ${x+size*0.16},${y+size*0.84}`, fill:"none", stroke:color, "stroke-width":sw}));
+      } else if(type==="arrow"){
+        add(svgEl("line", {x1:x+size*0.5, y1:y+size*0.82, x2:x+size*0.5, y2:y+size*0.24, stroke:color, "stroke-width":sw}));
+        add(svgEl("line", {x1:x+size*0.28, y1:y+size*0.42, x2:x+size*0.5, y2:y+size*0.18, stroke:color, "stroke-width":sw}));
+        add(svgEl("line", {x1:x+size*0.72, y1:y+size*0.42, x2:x+size*0.5, y2:y+size*0.18, stroke:color, "stroke-width":sw}));
+      } else if(type==="diamond"){
+        add(svgEl("polygon", {points:`${x+size/2},${y+size*0.12} ${x+size*0.88},${y+size/2} ${x+size/2},${y+size*0.88} ${x+size*0.12},${y+size/2}`, fill:"none", stroke:color, "stroke-width":sw}));
+      } else if(type==="oval"){
+        add(svgEl("ellipse", {cx:x+size/2, cy:y+size/2, rx:size*0.22, ry:size*0.34, fill:"none", stroke:color, "stroke-width":sw}));
+      } else if(type==="plus"){
+        add(svgEl("line", {x1:x+size*0.5, y1:y+size*0.16, x2:x+size*0.5, y2:y+size*0.84, stroke:color, "stroke-width":sw}));
+        add(svgEl("line", {x1:x+size*0.16, y1:y+size*0.5, x2:x+size*0.84, y2:y+size*0.5, stroke:color, "stroke-width":sw}));
+      } else if(type==="doubleBar"){
+        add(svgEl("line", {x1:x+size*0.22, y1:y+size*0.38, x2:x+size*0.78, y2:y+size*0.38, stroke:color, "stroke-width":sw}));
+        add(svgEl("line", {x1:x+size*0.22, y1:y+size*0.62, x2:x+size*0.78, y2:y+size*0.62, stroke:color, "stroke-width":sw}));
+      } else if(type==="cornerTri"){
+        add(svgEl("polygon", {points:`${x+size*0.16},${y+size*0.16} ${x+size*0.84},${y+size*0.16} ${x+size*0.16},${y+size*0.84}`, fill:"none", stroke:color, "stroke-width":sw}));
+      }
+      svg.appendChild(g);
+    }
+
+    function renderNet(cube){
+      const coords = cube.coords;
+      const xs = coords.map(p=>p[0]);
+      const ys = coords.map(p=>p[1]);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const cols = maxX - minX + 1;
+      const rows = maxY - minY + 1;
+
+      const cell = 88;
+      const pad = 20;
+      const vbW = cols*cell + pad*2;
+      const vbH = rows*cell + pad*2;
+
+      const svg = svgEl("svg", {
+        viewBox:`0 0 ${vbW} ${vbH}`,
+        preserveAspectRatio:"xMidYMid meet"
+      });
+
+      coords.forEach(([gx,gy],i)=>{
+        const x = pad + (gx-minX)*cell;
+        const y = pad + (gy-minY)*cell;
+        svg.appendChild(svgEl("rect", {
+          x,y,width:cell,height:cell,
+          fill:"#fff", stroke:"#202020", "stroke-width":"2.2"
+        }));
+        const sym = cube.assignedSymbols[i];
+        drawOrientedSymbolSVG(svg, sym.type, x+14, y+14, cell-28, "#111", sym.dir);
+      });
+
+      return svg;
+    }
+
+    function makeFaceTexture(type, dir=[0,-1]){
+      const c = document.createElement("canvas");
+      c.width = 512;
+      c.height = 512;
+      const ctx = c.getContext("2d");
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0,0,512,512);
+
+      const cx = 256, cy = 256;
+      const ang = Math.atan2(dir[1], dir[0]) + Math.PI/2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(ang);
+      ctx.translate(-cx, -cy);
+
+      ctx.strokeStyle = "#111111";
+      ctx.fillStyle = "#111111";
+      ctx.lineWidth = 18;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      function line(x1,y1,x2,y2,color="#111",w=18){
+        ctx.strokeStyle=color;
+        ctx.lineWidth=w;
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.lineTo(x2,y2);
+        ctx.stroke();
+      }
+
+      if(type==="solidTri"){
+        ctx.beginPath(); ctx.moveTo(140,140); ctx.lineTo(372,140); ctx.lineTo(140,372); ctx.closePath(); ctx.fill();
+      } else if(type==="dot"){
+        ctx.beginPath(); ctx.arc(256,256,42,0,Math.PI*2); ctx.fill();
+      } else if(type==="hbar"){
+        ctx.fillRect(140,220,232,52);
+      } else if(type==="ring"){
+        ctx.beginPath(); ctx.arc(256,256,74,0,Math.PI*2); ctx.stroke();
+      } else if(type==="xmark"){
+        line(150,150,362,362,"#111",18); line(362,150,150,362,"#b8b8b8",12);
+      } else if(type==="outlineTri"){
+        ctx.beginPath(); ctx.moveTo(256,96); ctx.lineTo(388,392); ctx.lineTo(124,392); ctx.closePath(); ctx.stroke();
+      } else if(type==="arrow"){
+        line(256,388,256,150); line(190,220,256,130); line(322,220,256,130);
+      } else if(type==="diamond"){
+        ctx.beginPath(); ctx.moveTo(256,110); ctx.lineTo(402,256); ctx.lineTo(256,402); ctx.lineTo(110,256); ctx.closePath(); ctx.stroke();
+      } else if(type==="oval"){
+        ctx.beginPath(); ctx.ellipse(256,256,72,112,0,0,Math.PI*2); ctx.stroke();
+      } else if(type==="plus"){
+        line(256,112,256,400); line(112,256,400,256);
+      } else if(type==="doubleBar"){
+        line(150,210,362,210); line(150,302,362,302);
+      } else if(type==="cornerTri"){
+        ctx.beginPath(); ctx.moveTo(130,130); ctx.lineTo(382,130); ctx.lineTo(130,382); ctx.closePath(); ctx.stroke();
+      }
+
+      ctx.restore();
+      const tex = new THREE.CanvasTexture(c);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    // THREE.js BoxGeometry UV canvas axes in world space for each face normal.
+    // Derived from BoxGeometry buildPlane calls:
+    //   +X: buildPlane('z','y','x',-1,-1) → canvasRight=-Z, canvasDown=-Y
+    //   -X: buildPlane('z','y','x', 1,-1) → canvasRight=+Z, canvasDown=-Y
+    //   +Y: buildPlane('x','z','y', 1, 1) → canvasRight=+X, canvasDown=+Z
+    //   -Y: buildPlane('x','z','y', 1,-1) → canvasRight=+X, canvasDown=-Z
+    //   +Z: buildPlane('x','y','z', 1,-1) → canvasRight=+X, canvasDown=-Y
+    //   -Z: buildPlane('x','y','z',-1,-1) → canvasRight=-X, canvasDown=-Y
+    const FACE_CANVAS_AXES = {
+      "1,0,0":   { cx:[0,0,-1], cy:[0,-1,0] },
+      "-1,0,0":  { cx:[0,0,1],  cy:[0,-1,0] },
+      "0,1,0":   { cx:[1,0,0],  cy:[0,0,1]  },
+      "0,-1,0":  { cx:[1,0,0],  cy:[0,0,-1] },
+      "0,0,1":   { cx:[1,0,0],  cy:[0,-1,0] },
+      "0,0,-1":  { cx:[-1,0,0], cy:[0,-1,0] }
+    };
+
+    function computeTextureDir(face){
+      const dir = face.symbol.dir;       // [dx, dy] in SVG/screen space (Y-down)
+      const {u, v, n} = face.basis;
+      // The symbol dir uses SVG convention: [0,-1] = up on screen.
+      // But the fold basis maps grid +Y → world +v (upward).
+      // Since screen-up is grid -Y, we negate dir[1] so that
+      // "screen up" correctly maps to "-v" in 3D world space.
+      const wd = [
+        dir[0]*u[0] - dir[1]*v[0],
+        dir[0]*u[1] - dir[1]*v[1],
+        dir[0]*u[2] - dir[1]*v[2]
+      ];
+      // Project onto the canvas axes for this BoxGeometry face
+      const axes = FACE_CANVAS_AXES[vkey(n)];
+      return [dot(wd, axes.cx), dot(wd, axes.cy)];
+    }
+
+    function createCubeMaterials(cube){
+      return ALL_NORMALS.map(n => {
+        const face = cube.byNormal[vkey(n)];
+        const texDir = computeTextureDir(face);
+        return new THREE.MeshBasicMaterial({
+          map: makeFaceTexture(face.symbol.type, texDir)
+        });
+      });
+    }
+
+    function createCubeScene(container, optionData){
+      const width = Math.max(120, container.clientWidth || 220);
+      const height = Math.max(100, container.clientHeight || 140);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xffffff);
+
+      const camera = new THREE.PerspectiveCamera(35, width/height, 0.1, 100);
+      camera.position.set(2.8, 2.45, 3.2);
+      camera.lookAt(0,0,0);
+
+      const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(width, height);
+      container.innerHTML = "";
+      container.appendChild(renderer.domElement);
+
+      const mats = createCubeMaterials(optionData.cube);
+
+      const geom = new THREE.BoxGeometry(1.5,1.5,1.5);
+      const cubeMesh = new THREE.Mesh(geom, mats);
+      scene.add(cubeMesh);
+
+      const edge = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geom),
+        new THREE.LineBasicMaterial({color:0x202020})
+      );
+      scene.add(edge);
+
+      const light1 = new THREE.DirectionalLight(0xffffff, 0.9);
+      light1.position.set(3,5,4);
+      scene.add(light1);
+
+      const light2 = new THREE.AmbientLight(0xffffff, 0.65);
+      scene.add(light2);
+
+      renderer.render(scene, camera);
+
+      renderers.push({
+        renderer,
+        materials:mats,
+        geom,
+        dispose(){
+          renderer.dispose();
+          geom.dispose();
+          mats.forEach(m => {
+            if(m.map) m.map.dispose();
+            m.dispose();
+          });
+        }
+      });
+    }
+
+    function clearRenderers(){
+      renderers.forEach(r => { try{r.dispose();}catch(e){} });
+      renderers = [];
+    }
+
+    function updateTexts(){
+      questionBar.textContent = lang==="zh"
+        ? "下列哪一個立方體可以由左側的 2D 展開圖摺成？"
+        : "Which 3D cube can be made from the 2D net on the left?";
+
+      leftTitle.textContent = lang==="zh" ? "2D 展開圖" : "2D Net";
+      rightTitle.textContent = lang==="zh" ? "選項" : "Options";
+      leftNote.textContent = lang==="zh"
+        ? "所有選項都是真正完整立方體，避免出現不可能的相鄰關係。"
+        : "All options are full valid cubes, preventing impossible adjacencies.";
+
+      langBtn.textContent = lang==="zh" ? "切換語言：中文" : "Language: English";
+      styleBtn.textContent =
+        styleMode==="geo"
+          ? (lang==="zh" ? "圖案風格：幾何符號" : "Pattern Style: Geometric")
+          : (lang==="zh" ? "圖案風格：記號符號" : "Pattern Style: Marks");
+
+      scoreEl.textContent = lang==="zh"
+        ? `題數：${totalCount}　答對：${correctCount}`
+        : `Questions: ${totalCount}   Correct: ${correctCount}`;
+    }
+
+    function renderQuestion(){
+      clearRenderers();
+      selectedIndex = null;
+      netHolder.innerHTML = "";
+      choicesEl.innerHTML = "";
+
+      netHolder.appendChild(renderNet(currentQuestion.cube));
+
+      currentQuestion.options.forEach((opt, idx) => {
+        const card = document.createElement("div");
+        card.className = "choice";
+        card.dataset.index = idx;
+
+        const badge = document.createElement("div");
+        badge.className = "badge";
+        badge.textContent = letters[idx];
+
+        const glbox = document.createElement("div");
+        glbox.className = "glbox";
+
+        card.appendChild(badge);
+        card.appendChild(glbox);
+
+        card.addEventListener("click", () => {
+          document.querySelectorAll(".choice").forEach(el => el.classList.remove("selected"));
+          card.classList.add("selected");
+          selectedIndex = idx;
+        });
+
+        choicesEl.appendChild(card);
+        createCubeScene(glbox, opt);
+      });
+
+      updateTexts();
+      resultEl.textContent = lang==="zh"
+        ? "請選擇 A–E 其中一個答案。"
+        : "Choose one answer from A–E.";
+    }
+
+    function markAnswer(showOnly=false){
+      const cards = [...document.querySelectorAll(".choice")];
+      cards.forEach((card,i)=>{
+        card.classList.remove("correct","wrong");
+        if(i===currentQuestion.correctIndex) card.classList.add("correct");
+      });
+
+      if(showOnly){
+        resultEl.innerHTML = lang==="zh"
+          ? `正確答案是 <strong>${letters[currentQuestion.correctIndex]}</strong>`
+          : `The correct answer is <strong>${letters[currentQuestion.correctIndex]}</strong>`;
+        return;
+      }
+
+      if(selectedIndex===null){
+        resultEl.textContent = lang==="zh" ? "請先選擇一個答案。" : "Please select an answer first.";
+        return;
+      }
+
+      totalCount++;
+      if(selectedIndex===currentQuestion.correctIndex){
+        correctCount++;
+        resultEl.innerHTML = lang==="zh"
+          ? `✅ 答對了！正確答案是 <strong>${letters[currentQuestion.correctIndex]}</strong>`
+          : `✅ Correct! The answer is <strong>${letters[currentQuestion.correctIndex]}</strong>`;
+      } else {
+        cards[selectedIndex].classList.add("wrong");
+        resultEl.innerHTML = lang==="zh"
+          ? `❌ 答錯了。正確答案是 <strong>${letters[currentQuestion.correctIndex]}</strong>`
+          : `❌ Incorrect. The correct answer is <strong>${letters[currentQuestion.correctIndex]}</strong>`;
+      }
+      updateTexts();
+    }
+
+    function newQuestion(){
+      currentQuestion = generateQuestion();
+      renderQuestion();
+    }
+
+    document.getElementById("newBtn").addEventListener("click", newQuestion);
+    document.getElementById("nextBtn").addEventListener("click", newQuestion);
+    document.getElementById("showBtn").addEventListener("click", ()=> currentQuestion && markAnswer(true));
+    document.getElementById("checkBtn").addEventListener("click", ()=> currentQuestion && markAnswer(false));
+
+    langBtn.addEventListener("click", ()=>{
+      lang = lang==="zh" ? "en" : "zh";
+      updateTexts();
+      resultEl.textContent = lang==="zh"
+        ? "請選擇 A–E 其中一個答案。"
+        : "Choose one answer from A–E.";
+    });
+
+    styleBtn.addEventListener("click", ()=>{
+      styleMode = styleMode==="geo" ? "mark" : "geo";
+      newQuestion();
+    });
+
+    let resizeTimer = null;
+    window.addEventListener("resize", ()=>{
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(()=>{
+        if(currentQuestion) renderQuestion();
+      }, 120);
+    });
+
+    newQuestion();
+  </script>
+</body>
+</html>
