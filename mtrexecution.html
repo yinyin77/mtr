@@ -202,7 +202,7 @@
             </div>
 
             <div class="info">
-                💡 Click on an execution row to see per-account completion status. Status is determined from <code>mtrsteps</code>: <strong>Finished</strong> = has <em>allfinished</em> record, <strong>Failed</strong> = last meaningful stage is <em>cannot start</em> with no later <em>allfinished</em>, <strong>In Progress</strong> = has steps but not finished/failed, <strong>Pending</strong> = no steps at all.
+                💡 Click on an execution row to see per-account completion status. Status is determined from <code>mtrsteps</code>: <strong>Finished</strong> = has <em>allfinished</em> record, <strong>Failed</strong> = stuck at <em>mtrstart</em> with "cannot start" and no progress beyond, <strong>In Progress</strong> = has steps but not finished/failed, <strong>Pending</strong> = no steps at all.
             </div>
 
             <div id="listContent">
@@ -250,6 +250,7 @@
         let executions = [];
         let accountNames = [];
         let currentExecId = null;
+        let stepsByExecGlobal = {};
 
         function escHtml(str) {
             if (str == null) return '';
@@ -309,22 +310,27 @@
             await sb.auth.signOut();
         });
 
-        document.getElementById('backBtn').addEventListener('click', () => showView('listView'));
+        document.getElementById('backBtn').addEventListener('click', () => {
+            showView('listView');
+            stepsByExecGlobal = {}; // Clear cache when going back to list
+        });
         document.getElementById('stepsBackBtn').addEventListener('click', () => {
             showView('detailView');
         });
 
         // ── Paginated fetch helper (Supabase default limit is 1000) ──
-        async function fetchAllRows(table, select, orderCol, ascending = true) {
+        async function fetchAllRows(table, select, orderCol, ascending = true, filterFn = null) {
             const PAGE_SIZE = 1000;
             let allData = [];
             let from = 0;
+            let query = sb.from(table).select(select);
+            
+            if (filterFn) query = filterFn(query);
+            
+            query = query.order(orderCol, { ascending });
+            
             while (true) {
-                const { data, error } = await sb
-                    .from(table)
-                    .select(select)
-                    .order(orderCol, { ascending })
-                    .range(from, from + PAGE_SIZE - 1);
+                const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
                 if (error) throw error;
                 if (!data || data.length === 0) break;
                 allData = allData.concat(data);
@@ -334,13 +340,13 @@
             return allData;
         }
 
-        // ── Load All Data ──
+        // ── Load All Data (Lazy Loading - only executions, no steps upfront) ──
         async function loadAll() {
             showView('listView');
             document.getElementById('listContent').innerHTML = '<p class="loading">⏳ Loading executions...</p>';
 
             try {
-                // 1. Load executions
+                // 1. Load executions (small table)
                 executions = await fetchAllRows('mtrexecution', 'mtrexecutionid, d, executionname', 'mtrexecutionid', false);
 
                 // 2. Load account names from mtraccount_dbaudit (paginated)
@@ -352,28 +358,17 @@
                     if (r.name && r.name.trim()) nameSet.add(r.name.trim());
                 });
 
-                // 3. Load ALL steps with pagination (can be 20k+ rows)
-                document.getElementById('listContent').innerHTML = '<p class="loading">⏳ Loading steps (this may take a moment)...</p>';
-                const stepsData = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true);
-
                 accountNames = Array.from(nameSet).sort();
-                console.log(`Loaded: ${executions.length} executions, ${accountNames.length} accounts, ${stepsData.length} steps`);
+                console.log(`Loaded: ${executions.length} executions, ${accountNames.length} accounts`);
 
-                // Group steps by executionid
-                const stepsByExec = {};
-                stepsData.forEach(s => {
-                    if (!stepsByExec[s.mtrexecutionid]) stepsByExec[s.mtrexecutionid] = [];
-                    stepsByExec[s.mtrexecutionid].push(s);
-                });
-
-                // 4. Compute summary per execution
-                renderExecutionList(stepsByExec);
+                // 3. Render execution list (without steps - lazy load on click)
+                renderExecutionList();
 
                 document.getElementById('lastUpdated').textContent =
                     'Last fetched: ' + new Date().toLocaleString() +
                     ' | Executions: ' + executions.length +
                     ' | Accounts: ' + accountNames.length +
-                    ' | Total steps: ' + stepsData.length;
+                    ' | Steps: loaded on demand';
 
             } catch (err) {
                 document.getElementById('listContent').innerHTML =
@@ -392,17 +387,22 @@
             // Sort by date ascending
             acctSteps.sort((a, b) => new Date(a.d) - new Date(b.d));
 
-            // Check if there's an 'allfinished' stage anywhere
-            const hasAllFinished = acctSteps.some(s =>
-                s.stage === 'allfinished' || s.detail === 'allfinished'
-            );
+            // Check if there's an 'allfinished' stage
+            const hasAllFinished = acctSteps.some(s => s.stage === 'allfinished');
             if (hasAllFinished) return 'finished';
 
-            // Check if the last step indicates failure (cannot start) with no allfinished after
-            const lastStep = acctSteps[acctSteps.length - 1];
-            if (lastStep.detail && lastStep.detail.toLowerCase().includes('cannot start')) {
-                return 'failed';
-            }
+            // Check if stuck at 'mtrstart' with 'cannot start'
+            const hasCannotStart = acctSteps.some(s => 
+                s.stage === 'mtrstart' && s.detail === 'cannot start'
+            );
+            
+            // Check if there's any progress beyond mtrstart stage
+            const hasProgressBeyondStart = acctSteps.some(s => 
+                s.stage !== 'mtrstart'
+            );
+            
+            // If has "cannot start" and no progress beyond mtrstart → failed
+            if (hasCannotStart && !hasProgressBeyondStart) return 'failed';
 
             // Has steps but not finished and not failed → in progress
             return 'progress';
@@ -418,12 +418,8 @@
             return map[status] || status;
         }
 
-        // ── Render Execution List ──
-        let stepsByExecGlobal = {};
-
-        function renderExecutionList(stepsByExec) {
-            stepsByExecGlobal = stepsByExec;
-
+        // ── Render Execution List (without summary counts - lazy load) ──
+        function renderExecutionList() {
             if (executions.length === 0) {
                 document.getElementById('listContent').innerHTML =
                     '<p style="color:#666;padding:20px 0;">No executions found.</p>';
@@ -435,33 +431,15 @@
                     <th>ID</th>
                     <th>Date</th>
                     <th>Execution Name</th>
-                    <th>Finished</th>
-                    <th>Failed</th>
-                    <th>In Progress</th>
-                    <th>Pending</th>
-                    <th>Total</th>
+                    <th>Click for details →</th>
                 </tr></thead><tbody>`;
 
             executions.forEach(exec => {
-                const steps = stepsByExec[exec.mtrexecutionid] || [];
-                let counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
-
-                accountNames.forEach(name => {
-                    const status = getAccountStatus(steps, name);
-                    counts[status]++;
-                });
-
-                const total = accountNames.length;
-
                 html += `<tr class="clickable-row" onclick="showExecDetail(${exec.mtrexecutionid})">
                     <td><strong>${escHtml(exec.mtrexecutionid)}</strong></td>
                     <td>${escHtml(formatDate(exec.d))}</td>
                     <td>${escHtml(exec.executionname || '—')}</td>
-                    <td><span class="badge badge-finished">${counts.finished}</span></td>
-                    <td><span class="badge badge-failed">${counts.failed}</span></td>
-                    <td><span class="badge badge-progress">${counts.progress}</span></td>
-                    <td><span class="badge badge-pending">${counts.pending}</span></td>
-                    <td>${total}</td>
+                    <td><em>Click to load account status...</em></td>
                 </tr>`;
             });
 
@@ -469,8 +447,8 @@
             document.getElementById('listContent').innerHTML = html;
         }
 
-        // ── Show Execution Detail ──
-        function showExecDetail(execId) {
+        // ── Show Execution Detail (Lazy load steps for this execution only) ──
+        async function showExecDetail(execId) {
             currentExecId = execId;
             showView('detailView');
 
@@ -478,66 +456,85 @@
             document.getElementById('detailTitle').textContent =
                 `Execution #${execId}: ${exec ? (exec.executionname || '—') : ''}`;
 
-            const steps = stepsByExecGlobal[execId] || [];
-            let counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
-            const accountStatuses = [];
+            document.getElementById('detailContent').innerHTML = '<p class="loading">⏳ Loading steps for this execution...</p>';
+            document.getElementById('summarySection').innerHTML = '';
 
-            accountNames.forEach(name => {
-                const status = getAccountStatus(steps, name);
-                counts[status]++;
-                const acctSteps = steps.filter(s => s.wname === name);
-                const lastStep = acctSteps.length > 0 ? acctSteps[acctSteps.length - 1] : null;
-                accountStatuses.push({ name, status, lastStep, stepCount: acctSteps.length });
-            });
+            try {
+                // Fetch steps only for this execution (lazy load)
+                let steps = stepsByExecGlobal[execId];
+                
+                if (!steps) {
+                    steps = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true,
+                        (q) => q.eq('mtrexecutionid', execId));
+                    stepsByExecGlobal[execId] = steps;
+                }
 
-            const total = accountNames.length;
-            const pctFinished = total ? Math.round(counts.finished / total * 100) : 0;
-            const pctFailed   = total ? Math.round(counts.failed / total * 100) : 0;
-            const pctProgress = total ? Math.round(counts.progress / total * 100) : 0;
-            const pctPending  = total ? (100 - pctFinished - pctFailed - pctProgress) : 0;
+                console.log(`Loaded ${steps.length} steps for execution ${execId}`);
 
-            // Summary
-            let summaryHtml = `
-                <div class="summary-bar">
-                    <div class="summary-card card-total"><div class="num">${total}</div><div class="label">Total Accounts</div></div>
-                    <div class="summary-card card-finished"><div class="num">${counts.finished}</div><div class="label">✅ Finished</div></div>
-                    <div class="summary-card card-failed"><div class="num">${counts.failed}</div><div class="label">❌ Failed</div></div>
-                    <div class="summary-card card-progress"><div class="num">${counts.progress}</div><div class="label">⏳ In Progress</div></div>
-                    <div class="summary-card card-pending"><div class="num">${counts.pending}</div><div class="label">⬜ Pending</div></div>
-                </div>
-                <div class="progress-wrap">
-                    <div class="progress-seg seg-finished" style="width:${pctFinished}%">${pctFinished > 5 ? pctFinished + '%' : ''}</div>
-                    <div class="progress-seg seg-failed" style="width:${pctFailed}%">${pctFailed > 5 ? pctFailed + '%' : ''}</div>
-                    <div class="progress-seg seg-progress" style="width:${pctProgress}%">${pctProgress > 5 ? pctProgress + '%' : ''}</div>
-                    <div class="progress-seg seg-pending" style="width:${pctPending}%">${pctPending > 5 ? pctPending + '%' : ''}</div>
-                </div>`;
-            document.getElementById('summarySection').innerHTML = summaryHtml;
+                let counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
+                const accountStatuses = [];
 
-            // Sort: failed first, then progress, pending, finished
-            const statusOrder = { failed: 0, progress: 1, pending: 2, finished: 3 };
-            accountStatuses.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+                accountNames.forEach(name => {
+                    const status = getAccountStatus(steps, name);
+                    counts[status]++;
+                    const acctSteps = steps.filter(s => s.wname === name);
+                    const lastStep = acctSteps.length > 0 ? acctSteps[acctSteps.length - 1] : null;
+                    accountStatuses.push({ name, status, lastStep, stepCount: acctSteps.length });
+                });
 
-            let html = `<table>
-                <thead><tr>
-                    <th>Account Name</th>
-                    <th>Status</th>
-                    <th>Steps</th>
-                    <th>Last Stage</th>
-                    <th>Last Detail</th>
-                </tr></thead><tbody>`;
+                const total = accountNames.length;
+                const pctFinished = total ? Math.round(counts.finished / total * 100) : 0;
+                const pctFailed   = total ? Math.round(counts.failed / total * 100) : 0;
+                const pctProgress = total ? Math.round(counts.progress / total * 100) : 0;
+                const pctPending  = total ? (100 - pctFinished - pctFailed - pctProgress) : 0;
 
-            accountStatuses.forEach(a => {
-                html += `<tr class="clickable-row" onclick="showAccountSteps(${execId}, '${escHtml(a.name)}')">
-                    <td><strong>${escHtml(a.name)}</strong></td>
-                    <td>${getStatusLabel(a.status)}</td>
-                    <td>${a.stepCount}</td>
-                    <td>${a.lastStep ? escHtml(a.lastStep.stage) : '—'}</td>
-                    <td>${a.lastStep ? escHtml(a.lastStep.detail) : '—'}</td>
-                </tr>`;
-            });
+                // Summary
+                let summaryHtml = `
+                    <div class="summary-bar">
+                        <div class="summary-card card-total"><div class="num">${total}</div><div class="label">Total Accounts</div></div>
+                        <div class="summary-card card-finished"><div class="num">${counts.finished}</div><div class="label">✅ Finished</div></div>
+                        <div class="summary-card card-failed"><div class="num">${counts.failed}</div><div class="label">❌ Failed</div></div>
+                        <div class="summary-card card-progress"><div class="num">${counts.progress}</div><div class="label">⏳ In Progress</div></div>
+                        <div class="summary-card card-pending"><div class="num">${counts.pending}</div><div class="label">⬜ Pending</div></div>
+                    </div>
+                    <div class="progress-wrap">
+                        <div class="progress-seg seg-finished" style="width:${pctFinished}%">${pctFinished > 5 ? pctFinished + '%' : ''}</div>
+                        <div class="progress-seg seg-failed" style="width:${pctFailed}%">${pctFailed > 5 ? pctFailed + '%' : ''}</div>
+                        <div class="progress-seg seg-progress" style="width:${pctProgress}%">${pctProgress > 5 ? pctProgress + '%' : ''}</div>
+                        <div class="progress-seg seg-pending" style="width:${pctPending}%">${pctPending > 5 ? pctPending + '%' : ''}</div>
+                    </div>`;
+                document.getElementById('summarySection').innerHTML = summaryHtml;
 
-            html += '</tbody></table>';
-            document.getElementById('detailContent').innerHTML = html;
+                // Sort: failed first, then progress, pending, finished
+                const statusOrder = { failed: 0, progress: 1, pending: 2, finished: 3 };
+                accountStatuses.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+
+                let html = `<table>
+                    <thead><tr>
+                        <th>Account Name</th>
+                        <th>Status</th>
+                        <th>Steps</th>
+                        <th>Last Stage</th>
+                        <th>Last Detail</th>
+                    </tr></thead><tbody>`;
+
+                accountStatuses.forEach(a => {
+                    html += `<tr class="clickable-row" onclick="showAccountSteps(${execId}, '${escHtml(a.name)}')">
+                        <td><strong>${escHtml(a.name)}</strong></td>
+                        <td>${getStatusLabel(a.status)}</td>
+                        <td>${a.stepCount}</td>
+                        <td>${a.lastStep ? escHtml(a.lastStep.stage) : '—'}</td>
+                        <td>${a.lastStep ? escHtml(a.lastStep.detail) : '—'}</td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                document.getElementById('detailContent').innerHTML = html;
+
+            } catch (err) {
+                document.getElementById('detailContent').innerHTML =
+                    `<div class="error"><strong>Error:</strong> ${escHtml(err.message)}</div>`;
+            }
         }
 
         // ── Show Account Steps for an Execution ──
