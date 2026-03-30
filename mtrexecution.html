@@ -251,6 +251,7 @@
         let accountNames = [];
         let currentExecId = null;
         let stepsByExecGlobal = {};
+        let summaryByExecGlobal = {};
 
         function escHtml(str) {
             if (str == null) return '';
@@ -312,7 +313,6 @@
 
         document.getElementById('backBtn').addEventListener('click', () => {
             showView('listView');
-            stepsByExecGlobal = {}; // Clear cache when going back to list
         });
         document.getElementById('stepsBackBtn').addEventListener('click', () => {
             showView('detailView');
@@ -340,7 +340,7 @@
             return allData;
         }
 
-        // ── Load All Data (Lazy Loading - only executions, no steps upfront) ──
+        // ── Load All Data ──
         async function loadAll() {
             showView('listView');
             document.getElementById('listContent').innerHTML = '<p class="loading">⏳ Loading executions...</p>';
@@ -361,14 +361,13 @@
                 accountNames = Array.from(nameSet).sort();
                 console.log(`Loaded: ${executions.length} executions, ${accountNames.length} accounts`);
 
-                // 3. Render execution list (without steps - lazy load on click)
-                renderExecutionList();
+                // 3. Render execution list with summary counts (loaded asynchronously per execution)
+                renderExecutionListWithSummaries();
 
                 document.getElementById('lastUpdated').textContent =
                     'Last fetched: ' + new Date().toLocaleString() +
                     ' | Executions: ' + executions.length +
-                    ' | Accounts: ' + accountNames.length +
-                    ' | Steps: loaded on demand';
+                    ' | Accounts: ' + accountNames.length;
 
             } catch (err) {
                 document.getElementById('listContent').innerHTML =
@@ -418,20 +417,37 @@
             return map[status] || status;
         }
 
-        // ── Render Execution List (without summary counts - lazy load) ──
-        function renderExecutionList() {
+        // ── Compute summary counts for an execution ──
+        function computeSummaryCounts(steps) {
+            let counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
+            
+            accountNames.forEach(name => {
+                const status = getAccountStatus(steps, name);
+                counts[status]++;
+            });
+            
+            return counts;
+        }
+
+        // ── Render Execution List with Async Summary Loading ──
+        async function renderExecutionListWithSummaries() {
             if (executions.length === 0) {
                 document.getElementById('listContent').innerHTML =
                     '<p style="color:#666;padding:20px 0;">No executions found.</p>';
                 return;
             }
 
+            // First render with loading placeholders
             let html = `<table>
                 <thead><tr>
                     <th>ID</th>
                     <th>Date</th>
                     <th>Execution Name</th>
-                    <th>Click for details →</th>
+                    <th>Finished</th>
+                    <th>Failed</th>
+                    <th>In Progress</th>
+                    <th>Pending</th>
+                    <th>Total</th>
                 </tr></thead><tbody>`;
 
             executions.forEach(exec => {
@@ -439,15 +455,54 @@
                     <td><strong>${escHtml(exec.mtrexecutionid)}</strong></td>
                     <td>${escHtml(formatDate(exec.d))}</td>
                     <td>${escHtml(exec.executionname || '—')}</td>
-                    <td><em>Click to load account status...</em></td>
+                    <td id="exec-${exec.mtrexecutionid}-finished"><em>Loading...</em></td>
+                    <td id="exec-${exec.mtrexecutionid}-failed"><em>Loading...</em></td>
+                    <td id="exec-${exec.mtrexecutionid}-progress"><em>Loading...</em></td>
+                    <td id="exec-${exec.mtrexecutionid}-pending"><em>Loading...</em></td>
+                    <td>${accountNames.length}</td>
                 </tr>`;
             });
 
             html += '</tbody></table>';
             document.getElementById('listContent').innerHTML = html;
+
+            // Load summaries for each execution in parallel (batch by 5 to avoid overwhelming)
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < executions.length; i += BATCH_SIZE) {
+                const batch = executions.slice(i, i + BATCH_SIZE);
+                await Promise.all(batch.map(async (exec) => {
+                    try {
+                        // Check cache first
+                        let steps = stepsByExecGlobal[exec.mtrexecutionid];
+                        
+                        if (!steps) {
+                            steps = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true,
+                                (q) => q.eq('mtrexecutionid', exec.mtrexecutionid));
+                            stepsByExecGlobal[exec.mtrexecutionid] = steps;
+                        }
+
+                        const counts = computeSummaryCounts(steps);
+                        summaryByExecGlobal[exec.mtrexecutionid] = counts;
+
+                        // Update the table cells
+                        const finishedEl = document.getElementById(`exec-${exec.mtrexecutionid}-finished`);
+                        const failedEl = document.getElementById(`exec-${exec.mtrexecutionid}-failed`);
+                        const progressEl = document.getElementById(`exec-${exec.mtrexecutionid}-progress`);
+                        const pendingEl = document.getElementById(`exec-${exec.mtrexecutionid}-pending`);
+
+                        if (finishedEl) finishedEl.innerHTML = `<span class="badge badge-finished">${counts.finished}</span>`;
+                        if (failedEl) failedEl.innerHTML = `<span class="badge badge-failed">${counts.failed}</span>`;
+                        if (progressEl) progressEl.innerHTML = `<span class="badge badge-progress">${counts.progress}</span>`;
+                        if (pendingEl) pendingEl.innerHTML = `<span class="badge badge-pending">${counts.pending}</span>`;
+
+                    } catch (err) {
+                        console.error(`Error loading summary for execution ${exec.mtrexecutionid}:`, err);
+                    }
+                }));
+            }
         }
 
-        // ── Show Execution Detail (Lazy load steps for this execution only) ──
+        // ── Show Execution Detail ──
         async function showExecDetail(execId) {
             currentExecId = execId;
             showView('detailView');
@@ -471,7 +526,7 @@
 
                 console.log(`Loaded ${steps.length} steps for execution ${execId}`);
 
-                let counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
+                let counts = summaryByExecGlobal[execId] || computeSummaryCounts(steps);
                 const accountStatuses = [];
 
                 accountNames.forEach(name => {
@@ -480,6 +535,12 @@
                     const acctSteps = steps.filter(s => s.wname === name);
                     const lastStep = acctSteps.length > 0 ? acctSteps[acctSteps.length - 1] : null;
                     accountStatuses.push({ name, status, lastStep, stepCount: acctSteps.length });
+                });
+
+                // Recompute counts properly
+                counts = { finished: 0, failed: 0, progress: 0, pending: 0 };
+                accountStatuses.forEach(a => {
+                    counts[a.status]++;
                 });
 
                 const total = accountNames.length;
