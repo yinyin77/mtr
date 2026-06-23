@@ -614,9 +614,11 @@
 
             try {
                 const PAGE_SIZE = 200;
-                const DELAY_MS = 500; // delay between chunks to avoid timeout
+                const DELAY_MS = 1500; // longer delay between chunks to avoid timeout
                 let allData = [];
                 let from = 0;
+                let retryCount = 0;
+                const MAX_RETRIES = 3;
 
                 const query = sb.from('mtrsteps')
                     .select('mtrstepsid, d, mtrexecutionid, stage, wname, detail')
@@ -624,8 +626,33 @@
                     .order('mtrstepsid', { ascending: true });
 
                 while (true) {
-                    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
-                    if (error) throw error;
+                    let data = null;
+                    let error = null;
+                    
+                    // Retry logic for each chunk
+                    for (let retry = 0; retry <= MAX_RETRIES; retry++) {
+                        const result = await query.range(from, from + PAGE_SIZE - 1);
+                        data = result.data;
+                        error = result.error;
+                        
+                        if (!error) break; // success
+                        
+                        // If timeout error, wait longer and retry
+                        if (error.code === '57014') {
+                            console.warn(`Timeout on chunk at offset ${from}, retry ${retry + 1}/${MAX_RETRIES}`);
+                            loadingEl.textContent = `⏳ Timeout, retrying... (${allData.length} rows loaded, attempt ${retry + 1}/${MAX_RETRIES})`;
+                            await sleep(3000 * (retry + 1)); // exponential backoff: 3s, 6s, 9s
+                        } else {
+                            break; // non-timeout error, don't retry
+                        }
+                    }
+                    
+                    if (error) {
+                        // Show error but keep existing data visible
+                        loadingEl.innerHTML = `<span style="color:#c33;">⚠️ Error loading more data: ${escHtml(error.message)}</span><br>Showing ${allData.length} rows loaded so far.`;
+                        break; // stop loading but don't clear data
+                    }
+                    
                     if (!data || data.length === 0) break;
 
                     allData = allData.concat(data);
@@ -655,19 +682,25 @@
                     await sleep(DELAY_MS);
                 }
 
-                // Cache the data
-                stepsByExecGlobal[execId] = allData;
-                console.log(`Loaded ${allData.length} steps for execution ${execId}`);
+                // Cache the data (even if partial)
+                if (allData.length > 0) {
+                    stepsByExecGlobal[execId] = allData;
+                    console.log(`Loaded ${allData.length} steps for execution ${execId}`);
+                }
 
-                // Hide loading indicator, show final summary
+                // Hide loading indicator
                 loadingEl.style.display = 'none';
 
-                // Now render the full detail view with summary
-                renderDetailFromSteps(execId, allData);
+                // Render the detail view with whatever data we have
+                if (allData.length > 0) {
+                    renderDetailFromSteps(execId, allData);
+                }
 
             } catch (err) {
-                document.getElementById('detailContent').innerHTML =
-                    `<div class="error"><strong>Error:</strong> ${escHtml(err.message)}</div>`;
+                // Don't clear data on error - just show error message
+                const existingContent = document.getElementById('detailContent').innerHTML;
+                const errorDiv = `<div class="error"><strong>Error:</strong> ${escHtml(err.message)}</div>`;
+                document.getElementById('detailContent').innerHTML = errorDiv + existingContent;
             }
         }
 
