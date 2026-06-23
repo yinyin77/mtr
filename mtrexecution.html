@@ -570,29 +570,12 @@
             }
         }
 
-        // ── Streaming fetch: fetches in small chunks and calls onBatch callback ──
-        async function fetchStreamingRows(table, select, orderCol, ascending, filterFn, pageSize, onBatch) {
-            let allData = [];
-            let from = 0;
-            let query = sb.from(table).select(select);
-            
-            if (filterFn) query = filterFn(query);
-            
-            query = query.order(orderCol, { ascending });
-            
-            while (true) {
-                const { data, error } = await query.range(from, from + pageSize - 1);
-                if (error) throw error;
-                if (!data || data.length === 0) break;
-                allData = allData.concat(data);
-                if (onBatch) onBatch(allData); // pass accumulated data so far
-                if (data.length < pageSize) break; // last page
-                from += pageSize;
-            }
-            return allData;
+        // ── Sleep helper ──
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // ── Show Execution Detail (streaming) ──
+        // ── Show Execution Detail (streaming with delay between chunks) ──
         async function showExecDetail(execId) {
             currentExecId = execId;
             showView('detailView');
@@ -609,30 +592,78 @@
                 return;
             }
 
-            // Show loading indicator with row count
-            document.getElementById('detailContent').innerHTML = 
-                '<p class="loading" id="detailLoading">⏳ Loading steps... (0 rows so far)</p>';
+            // Show table with loading indicator
+            document.getElementById('detailContent').innerHTML = `
+                <p class="loading" id="detailLoading">⏳ Loading steps... (0 rows so far)</p>
+                <table id="detailTable" style="display:none;">
+                    <thead><tr>
+                        <th>Step ID</th>
+                        <th>Date/Time</th>
+                        <th>Execution ID</th>
+                        <th>Stage</th>
+                        <th>Account</th>
+                        <th>Detail</th>
+                    </tr></thead>
+                    <tbody id="detailTableBody"></tbody>
+                </table>
+            `;
+
+            const loadingEl = document.getElementById('detailLoading');
+            const tableEl = document.getElementById('detailTable');
+            const tbodyEl = document.getElementById('detailTableBody');
 
             try {
-                const steps = await fetchStreamingRows(
-                    'mtrsteps',
-                    'mtrstepsid, d, mtrexecutionid, stage, wname, detail',
-                    'mtrstepsid', true,
-                    (q) => q.eq('mtrexecutionid', execId),
-                    200, // 200 rows per chunk
-                    (accumulated) => {
-                        // Update loading indicator with current count
-                        const loadingEl = document.getElementById('detailLoading');
-                        if (loadingEl) {
-                            loadingEl.textContent = `⏳ Loading steps... (${accumulated.length} rows so far)`;
-                        }
-                    }
-                );
+                const PAGE_SIZE = 200;
+                const DELAY_MS = 500; // delay between chunks to avoid timeout
+                let allData = [];
+                let from = 0;
 
-                stepsByExecGlobal[execId] = steps;
-                console.log(`Loaded ${steps.length} steps for execution ${execId}`);
+                const query = sb.from('mtrsteps')
+                    .select('mtrstepsid, d, mtrexecutionid, stage, wname, detail')
+                    .eq('mtrexecutionid', execId)
+                    .order('mtrstepsid', { ascending: true });
 
-                renderDetailFromSteps(execId, steps);
+                while (true) {
+                    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+                    if (error) throw error;
+                    if (!data || data.length === 0) break;
+
+                    allData = allData.concat(data);
+
+                    // Show table and append rows immediately
+                    tableEl.style.display = '';
+                    loadingEl.textContent = `⏳ Loading steps... (${allData.length} rows so far)`;
+
+                    // Append new rows to table
+                    let rowsHtml = '';
+                    data.forEach(s => {
+                        rowsHtml += `<tr>
+                            <td>${escHtml(s.mtrstepsid)}</td>
+                            <td>${escHtml(formatDate(s.d))}</td>
+                            <td>${escHtml(s.mtrexecutionid)}</td>
+                            <td>${escHtml(s.stage)}</td>
+                            <td>${escHtml(s.wname)}</td>
+                            <td>${escHtml(s.detail)}</td>
+                        </tr>`;
+                    });
+                    tbodyEl.insertAdjacentHTML('beforeend', rowsHtml);
+
+                    if (data.length < PAGE_SIZE) break; // last page
+                    from += PAGE_SIZE;
+
+                    // Sleep between chunks to avoid Supabase timeout
+                    await sleep(DELAY_MS);
+                }
+
+                // Cache the data
+                stepsByExecGlobal[execId] = allData;
+                console.log(`Loaded ${allData.length} steps for execution ${execId}`);
+
+                // Hide loading indicator, show final summary
+                loadingEl.style.display = 'none';
+
+                // Now render the full detail view with summary
+                renderDetailFromSteps(execId, allData);
 
             } catch (err) {
                 document.getElementById('detailContent').innerHTML =
