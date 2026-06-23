@@ -252,6 +252,8 @@
         let currentExecId = null;
         let stepsByExecGlobal = {};
         let summaryByExecGlobal = {};
+        let displayedCount = 20; // initially show first 20 executions
+        const INITIAL_DISPLAY = 20;
 
         function escHtml(str) {
             if (str == null) return '';
@@ -437,6 +439,10 @@
                 return;
             }
 
+            // Only render the first displayedCount executions
+            const visibleExecs = executions.slice(0, displayedCount);
+            const hasMore = displayedCount < executions.length;
+
             // First render with loading placeholders
             let html = `<table>
                 <thead><tr>
@@ -450,7 +456,7 @@
                     <th>Total</th>
                 </tr></thead><tbody>`;
 
-            executions.forEach(exec => {
+            visibleExecs.forEach(exec => {
                 html += `<tr class="clickable-row" onclick="showExecDetail(${exec.mtrexecutionid})">
                     <td><strong>${escHtml(exec.mtrexecutionid)}</strong></td>
                     <td>${escHtml(formatDate(exec.d))}</td>
@@ -464,7 +470,26 @@
             });
 
             html += '</tbody></table>';
+
+            // Add "Load All" button if there are more executions
+            if (hasMore) {
+                const remaining = executions.length - displayedCount;
+                html += `<div style="text-align:center;margin:20px 0;">
+                    <button id="loadAllBtn" style="padding:10px 24px;background:#007bff;color:white;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">
+                        Load All (${remaining} more)
+                    </button>
+                </div>`;
+            }
+
             document.getElementById('listContent').innerHTML = html;
+
+            // Attach click handler for Load All button
+            if (hasMore) {
+                document.getElementById('loadAllBtn').addEventListener('click', () => {
+                    displayedCount = executions.length;
+                    renderExecutionListWithSummaries();
+                });
+            }
 
             // Load summaries using lightweight filtered queries (only wname, no full data)
             async function loadSummaryCounts(execId) {
@@ -536,9 +561,9 @@
                 }
             }
 
-            // Load one execution at a time, sequentially
-            for (let i = 0; i < executions.length; i++) {
-                await loadOne(executions[i]);
+            // Load one execution at a time, sequentially (only visible ones)
+            for (let i = 0; i < visibleExecs.length; i++) {
+                await loadOne(visibleExecs[i]);
             }
         }
 
