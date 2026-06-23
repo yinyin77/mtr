@@ -466,18 +466,59 @@
             html += '</tbody></table>';
             document.getElementById('listContent').innerHTML = html;
 
-            // Load summaries one execution at a time to avoid overwhelming Supabase
+            // Load summaries using lightweight filtered queries (only wname, no full data)
+            async function loadSummaryCounts(execId) {
+                // Query 1: accounts with allfinished stage → finished
+                const { data: finishedData } = await sb.from('mtrsteps')
+                    .select('wname')
+                    .eq('mtrexecutionid', execId)
+                    .eq('stage', 'allfinished');
+                const finishedNames = new Set((finishedData || []).map(r => r.wname));
+
+                // Query 2: accounts stuck at mtrstart with "cannot start" → failed candidates
+                const { data: failedData } = await sb.from('mtrsteps')
+                    .select('wname')
+                    .eq('mtrexecutionid', execId)
+                    .eq('stage', 'mtrstart')
+                    .eq('detail', 'cannot start');
+                const failedCandidateNames = new Set((failedData || []).map(r => r.wname));
+
+                // Query 3: accounts with any stage beyond mtrstart → has real progress
+                const { data: progressData } = await sb.from('mtrsteps')
+                    .select('wname')
+                    .eq('mtrexecutionid', execId)
+                    .neq('stage', 'mtrstart');
+                const progressNames = new Set((progressData || []).map(r => r.wname));
+
+                // Query 4: all accounts that have any steps for this execution
+                const { data: anyStepsData } = await sb.from('mtrsteps')
+                    .select('wname')
+                    .eq('mtrexecutionid', execId);
+                const activeNames = new Set((anyStepsData || []).map(r => r.wname));
+
+                // Compute counts
+                let finished = 0, failed = 0, progress = 0, pending = 0;
+                accountNames.forEach(name => {
+                    if (finishedNames.has(name)) {
+                        finished++;
+                    } else if (failedCandidateNames.has(name) && !progressNames.has(name)) {
+                        // failed: has "cannot start" and no progress beyond mtrstart
+                        failed++;
+                    } else if (activeNames.has(name)) {
+                        // has steps but not finished/failed → in progress
+                        progress++;
+                    } else {
+                        // no steps at all → pending
+                        pending++;
+                    }
+                });
+
+                return { finished, failed, progress, pending };
+            }
+
             async function loadOne(exec) {
                 try {
-                    let steps = stepsByExecGlobal[exec.mtrexecutionid];
-                    
-                    if (!steps) {
-                        steps = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true,
-                            (q) => q.eq('mtrexecutionid', exec.mtrexecutionid));
-                        stepsByExecGlobal[exec.mtrexecutionid] = steps;
-                    }
-
-                    const counts = computeSummaryCounts(steps);
+                    const counts = await loadSummaryCounts(exec.mtrexecutionid);
                     summaryByExecGlobal[exec.mtrexecutionid] = counts;
 
                     const finishedEl = document.getElementById(`exec-${exec.mtrexecutionid}-finished`);
