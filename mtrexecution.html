@@ -466,10 +466,11 @@
             html += '</tbody></table>';
             document.getElementById('listContent').innerHTML = html;
 
-            // Load summaries for each execution in parallel (batch by 5 to avoid overwhelming)
-            const BATCH_SIZE = 5;
-            for (let i = 0; i < executions.length; i += BATCH_SIZE) {
-                const batch = executions.slice(i, i + BATCH_SIZE);
+            // Load summaries incrementally: first 5, then 10 at a time
+            const INITIAL_BATCH = 5;
+            const NEXT_BATCH = 10;
+
+            async function loadBatch(batch) {
                 await Promise.all(batch.map(async (exec) => {
                     try {
                         // Check cache first
@@ -499,6 +500,17 @@
                         console.error(`Error loading summary for execution ${exec.mtrexecutionid}:`, err);
                     }
                 }));
+            }
+
+            // First batch: top 5 executions
+            if (executions.length > 0) {
+                await loadBatch(executions.slice(0, INITIAL_BATCH));
+            }
+
+            // Then load 10 more at a time with a short delay between batches
+            for (let i = INITIAL_BATCH; i < executions.length; i += NEXT_BATCH) {
+                await new Promise(r => setTimeout(r, 300)); // small delay for visual effect
+                await loadBatch(executions.slice(i, i + NEXT_BATCH));
             }
         }
 
