@@ -466,51 +466,38 @@
             html += '</tbody></table>';
             document.getElementById('listContent').innerHTML = html;
 
-            // Load summaries incrementally: first 5, then 10 at a time
-            const INITIAL_BATCH = 5;
-            const NEXT_BATCH = 10;
-
-            async function loadBatch(batch) {
-                await Promise.all(batch.map(async (exec) => {
-                    try {
-                        // Check cache first
-                        let steps = stepsByExecGlobal[exec.mtrexecutionid];
-                        
-                        if (!steps) {
-                            steps = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true,
-                                (q) => q.eq('mtrexecutionid', exec.mtrexecutionid));
-                            stepsByExecGlobal[exec.mtrexecutionid] = steps;
-                        }
-
-                        const counts = computeSummaryCounts(steps);
-                        summaryByExecGlobal[exec.mtrexecutionid] = counts;
-
-                        // Update the table cells
-                        const finishedEl = document.getElementById(`exec-${exec.mtrexecutionid}-finished`);
-                        const failedEl = document.getElementById(`exec-${exec.mtrexecutionid}-failed`);
-                        const progressEl = document.getElementById(`exec-${exec.mtrexecutionid}-progress`);
-                        const pendingEl = document.getElementById(`exec-${exec.mtrexecutionid}-pending`);
-
-                        if (finishedEl) finishedEl.innerHTML = `<span class="badge badge-finished">${counts.finished}</span>`;
-                        if (failedEl) failedEl.innerHTML = `<span class="badge badge-failed">${counts.failed}</span>`;
-                        if (progressEl) progressEl.innerHTML = `<span class="badge badge-progress">${counts.progress}</span>`;
-                        if (pendingEl) pendingEl.innerHTML = `<span class="badge badge-pending">${counts.pending}</span>`;
-
-                    } catch (err) {
-                        console.error(`Error loading summary for execution ${exec.mtrexecutionid}:`, err);
+            // Load summaries one execution at a time to avoid overwhelming Supabase
+            async function loadOne(exec) {
+                try {
+                    let steps = stepsByExecGlobal[exec.mtrexecutionid];
+                    
+                    if (!steps) {
+                        steps = await fetchAllRows('mtrsteps', 'mtrstepsid, d, mtrexecutionid, stage, wname, detail', 'mtrstepsid', true,
+                            (q) => q.eq('mtrexecutionid', exec.mtrexecutionid));
+                        stepsByExecGlobal[exec.mtrexecutionid] = steps;
                     }
-                }));
+
+                    const counts = computeSummaryCounts(steps);
+                    summaryByExecGlobal[exec.mtrexecutionid] = counts;
+
+                    const finishedEl = document.getElementById(`exec-${exec.mtrexecutionid}-finished`);
+                    const failedEl = document.getElementById(`exec-${exec.mtrexecutionid}-failed`);
+                    const progressEl = document.getElementById(`exec-${exec.mtrexecutionid}-progress`);
+                    const pendingEl = document.getElementById(`exec-${exec.mtrexecutionid}-pending`);
+
+                    if (finishedEl) finishedEl.innerHTML = `<span class="badge badge-finished">${counts.finished}</span>`;
+                    if (failedEl) failedEl.innerHTML = `<span class="badge badge-failed">${counts.failed}</span>`;
+                    if (progressEl) progressEl.innerHTML = `<span class="badge badge-progress">${counts.progress}</span>`;
+                    if (pendingEl) pendingEl.innerHTML = `<span class="badge badge-pending">${counts.pending}</span>`;
+
+                } catch (err) {
+                    console.error(`Error loading summary for execution ${exec.mtrexecutionid}:`, err);
+                }
             }
 
-            // First batch: top 5 executions
-            if (executions.length > 0) {
-                await loadBatch(executions.slice(0, INITIAL_BATCH));
-            }
-
-            // Then load 10 more at a time with a short delay between batches
-            for (let i = INITIAL_BATCH; i < executions.length; i += NEXT_BATCH) {
-                await new Promise(r => setTimeout(r, 300)); // small delay for visual effect
-                await loadBatch(executions.slice(i, i + NEXT_BATCH));
+            // Load one execution at a time, sequentially
+            for (let i = 0; i < executions.length; i++) {
+                await loadOne(executions[i]);
             }
         }
 
